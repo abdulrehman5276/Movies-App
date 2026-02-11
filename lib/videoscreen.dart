@@ -35,14 +35,19 @@ class _VideoScreenState extends State<VideoScreen>
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.asset("assets/videos/testingvideo.mp4")
-      ..initialize().then((_) {
-        setState(() {
-          _isInitialized = true;
-        });
-        _controller.play();
-        _controller.setLooping(true);
-      });
+    _controller =
+        VideoPlayerController.networkUrl(
+            Uri.parse(
+              "https://dwpgnjixbmvyjaanhtlg.supabase.co/storage/v1/object/sign/Movies/WhatsApp%20Video%202026-02-11%20at%2011.49.12%20AM.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9mYmIwNjVjMy0xOWZjLTQ1MmMtYTgwYS0yZTk5ZGJkMGVlYjEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNb3ZpZXMvV2hhdHNBcHAgVmlkZW8gMjAyNi0wMi0xMSBhdCAxMS40OS4xMiBBTS5tcDQiLCJpYXQiOjE3NzA3OTY0MDYsImV4cCI6MTgwMjMzMjQwNn0.qFlZTWbA02AgUEpE_MSSwWDzQ7NHWHgQgDZXxD1KAAA",
+            ),
+          )
+          ..initialize().then((_) {
+            setState(() {
+              _isInitialized = true;
+            });
+            _controller.play();
+            _controller.setLooping(true);
+          });
 
     _controller.addListener(() {
       if (mounted) setState(() {});
