@@ -24,6 +24,7 @@ class _VideoScreenState extends State<VideoScreen>
   double _scale = 1.0;
   double _baseScale = 1.0;
   Timer? _hideTimer;
+  bool _isInitialized = false;
 
   // Gesture Feedback
   String _showText = "";
@@ -36,7 +37,9 @@ class _VideoScreenState extends State<VideoScreen>
     super.initState();
     _controller = VideoPlayerController.asset("assets/videos/testingvideo.mp4")
       ..initialize().then((_) {
-        setState(() {});
+        setState(() {
+          _isInitialized = true;
+        });
         _controller.play();
         _controller.setLooping(true);
       });
@@ -75,6 +78,7 @@ class _VideoScreenState extends State<VideoScreen>
 
   void _onLongPressStart(LongPressStartDetails details) {
     if (_isLocked) return;
+    HapticFeedback.mediumImpact();
     setState(() {
       _playbackSpeed = 2.0;
       _controller.setPlaybackSpeed(2.0);
@@ -108,6 +112,7 @@ class _VideoScreenState extends State<VideoScreen>
   }
 
   void _skip(Duration offset) {
+    HapticFeedback.lightImpact();
     final newPos = _controller.value.position + offset;
     _controller.seekTo(newPos);
     _showFeedback(
@@ -190,65 +195,99 @@ class _VideoScreenState extends State<VideoScreen>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Video Background
-            Transform.scale(
-              scale: _scale,
-              child: Center(
-                child: _controller.value.isInitialized
-                    ? AspectRatio(
-                        aspectRatio: _controller.value.aspectRatio,
-                        child: VideoPlayer(_controller),
-                      )
-                    : const CircularProgressIndicator(color: Colors.blueAccent),
+            // Smooth Video Background
+            AnimatedOpacity(
+              opacity: _isInitialized ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.easeIn,
+              child: Transform.scale(
+                scale: _scale,
+                child: Center(
+                  child: _controller.value.isInitialized
+                      ? AspectRatio(
+                          aspectRatio: _controller.value.aspectRatio,
+                          child: VideoPlayer(_controller),
+                        )
+                      : const CircularProgressIndicator(
+                          color: Colors.blueAccent,
+                        ),
+                ),
               ),
             ),
 
-            // Modern Gesture Overlay Feedback
-            if (_isFeedbackShowing)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 20,
-                    ),
-                    color: Colors.white.withOpacity(0.1),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(_showIcon, color: Colors.blueAccent, size: 50),
-                        const SizedBox(height: 12),
-                        Text(
-                          _showText,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
+            // Entrance Loading Shimmer/Animation if not initialized
+            if (!_isInitialized)
+              const Center(
+                child: Hero(
+                  tag: 'video_loader',
+                  child: CircularProgressIndicator(
+                    color: Colors.blueAccent,
+                    strokeWidth: 2,
                   ),
                 ),
               ),
 
-            // Lock Indicator
-            if (_showControls && _isLocked)
-              Positioned(
-                left: 20,
-                child: _buildGlassButton(
-                  icon: Icons.lock_rounded,
-                  onPressed: () => setState(() => _isLocked = false),
-                  isBig: true,
+            // Smooth Gesture Overlay Feedback
+            AnimatedOpacity(
+              opacity: _isFeedbackShowing ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: AnimatedScale(
+                scale: _isFeedbackShowing ? 1.0 : 0.8,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.backOut,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 20,
+                      ),
+                      color: Colors.white.withOpacity(0.1),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_showIcon, color: Colors.blueAccent, size: 50),
+                          const SizedBox(height: 12),
+                          Text(
+                            _showText,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
+            ),
+
+            // Smooth Lock Indicator
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOutBack,
+              left: _showControls || _isLocked ? 20 : -60,
+              child: _isLocked
+                  ? _buildGlassButton(
+                      icon: Icons.lock_rounded,
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        setState(() => _isLocked = false);
+                      },
+                      isBig: true,
+                    )
+                  : const SizedBox.shrink(),
+            ),
 
             // Main Controls Layer
             AnimatedOpacity(
               opacity: _showControls && !_isLocked ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOut,
               child: IgnorePointer(
                 ignoring: !_showControls || _isLocked,
                 child: Stack(
@@ -288,7 +327,10 @@ class _VideoScreenState extends State<VideoScreen>
           child: IconButton(
             iconSize: isBig ? 32 : 24,
             icon: Icon(icon, color: color ?? Colors.white),
-            onPressed: onPressed,
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              onPressed();
+            },
           ),
         ),
       ),
@@ -312,8 +354,10 @@ class _VideoScreenState extends State<VideoScreen>
   }
 
   Widget _buildTopBar() {
-    return Positioned(
-      top: 40,
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      top: _showControls ? 40 : -100,
       left: 20,
       right: 20,
       child: ClipRRect(
@@ -360,73 +404,85 @@ class _VideoScreenState extends State<VideoScreen>
 
   Widget _buildCenterControls() {
     return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(50),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildGlassButton(
-              icon: Icons.skip_previous_rounded,
-              onPressed: () {},
-            ),
-            const SizedBox(width: 12),
-            _buildGlassButton(
-              icon: Icons.replay_10_rounded,
-              onPressed: () => _skip(const Duration(seconds: -10)),
-            ),
-            const SizedBox(width: 20),
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _controller.value.isPlaying
-                      ? _controller.pause()
-                      : _controller.play();
-                });
-                _startHideTimer();
-              },
-              child: Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: Colors.blueAccent.withOpacity(0.8),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blueAccent.withOpacity(0.3),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  _controller.value.isPlaying
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 40,
+      child: AnimatedScale(
+        scale: _showControls ? 1.0 : 0.8,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutBack,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(50),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildGlassButton(
+                icon: Icons.skip_previous_rounded,
+                onPressed: () {},
+              ),
+              const SizedBox(width: 12),
+              _buildGlassButton(
+                icon: Icons.replay_10_rounded,
+                onPressed: () => _skip(const Duration(seconds: -10)),
+              ),
+              const SizedBox(width: 20),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  setState(() {
+                    _controller.value.isPlaying
+                        ? _controller.pause()
+                        : _controller.play();
+                  });
+                  _startHideTimer();
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withOpacity(0.8),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.blueAccent.withOpacity(0.3),
+                        blurRadius: _controller.value.isPlaying ? 20 : 10,
+                        spreadRadius: _controller.value.isPlaying ? 5 : 2,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _controller.value.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 40,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 20),
-            _buildGlassButton(
-              icon: Icons.forward_10_rounded,
-              onPressed: () => _skip(const Duration(seconds: 10)),
-            ),
-            const SizedBox(width: 12),
-            _buildGlassButton(icon: Icons.skip_next_rounded, onPressed: () {}),
-          ],
+              const SizedBox(width: 20),
+              _buildGlassButton(
+                icon: Icons.forward_10_rounded,
+                onPressed: () => _skip(const Duration(seconds: 10)),
+              ),
+              const SizedBox(width: 12),
+              _buildGlassButton(
+                icon: Icons.skip_next_rounded,
+                onPressed: () {},
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildBottomBar(Size size) {
-    return Positioned(
-      bottom: 30,
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      bottom: _showControls ? 30 : -200,
       left: 20,
       right: 20,
       child: ClipRRect(
@@ -533,6 +589,7 @@ class _VideoScreenState extends State<VideoScreen>
   }
 
   void _cycleSpeed() {
+    HapticFeedback.lightImpact();
     setState(() {
       if (_playbackSpeed == 1.0)
         _playbackSpeed = 1.5;
@@ -548,6 +605,7 @@ class _VideoScreenState extends State<VideoScreen>
   }
 
   void _toggleFullScreen() {
+    HapticFeedback.mediumImpact();
     setState(() {
       _isFullScreen = !_isFullScreen;
       if (_isFullScreen) {
