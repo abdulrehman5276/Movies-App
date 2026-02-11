@@ -234,7 +234,7 @@ class _VideoScreenState extends State<VideoScreen>
               child: AnimatedScale(
                 scale: _isFeedbackShowing ? 1.0 : 0.8,
                 duration: const Duration(milliseconds: 300),
-                curve: Curves.backOut,
+                curve: Curves.easeOutBack,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
                   child: BackdropFilter(
@@ -244,7 +244,7 @@ class _VideoScreenState extends State<VideoScreen>
                         horizontal: 32,
                         vertical: 20,
                       ),
-                      color: Colors.white.withOpacity(0.1),
+                      color: Colors.white.withValues(alpha: 0.1),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -317,10 +317,10 @@ class _VideoScreenState extends State<VideoScreen>
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             shape: BoxShape.circle,
             border: Border.all(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               width: 1.5,
             ),
           ),
@@ -367,8 +367,8 @@ class _VideoScreenState extends State<VideoScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.35),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              color: Colors.black.withValues(alpha: 0.35),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: Row(
               children: [
@@ -411,7 +411,7 @@ class _VideoScreenState extends State<VideoScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(50),
           ),
           child: Row(
@@ -442,11 +442,11 @@ class _VideoScreenState extends State<VideoScreen>
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withOpacity(0.8),
+                    color: Colors.blueAccent.withValues(alpha: 0.8),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.blueAccent.withOpacity(0.3),
+                        color: Colors.blueAccent.withValues(alpha: 0.3),
                         blurRadius: _controller.value.isPlaying ? 20 : 10,
                         spreadRadius: _controller.value.isPlaying ? 5 : 2,
                       ),
@@ -492,8 +492,8 @@ class _VideoScreenState extends State<VideoScreen>
           child: Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.35),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              color: Colors.black.withValues(alpha: 0.35),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -591,14 +591,15 @@ class _VideoScreenState extends State<VideoScreen>
   void _cycleSpeed() {
     HapticFeedback.lightImpact();
     setState(() {
-      if (_playbackSpeed == 1.0)
+      if (_playbackSpeed == 1.0) {
         _playbackSpeed = 1.5;
-      else if (_playbackSpeed == 1.5)
+      } else if (_playbackSpeed == 1.5) {
         _playbackSpeed = 2.0;
-      else if (_playbackSpeed == 2.0)
+      } else if (_playbackSpeed == 2.0) {
         _playbackSpeed = 0.5;
-      else
+      } else {
         _playbackSpeed = 1.0;
+      }
       _controller.setPlaybackSpeed(_playbackSpeed);
       _showFeedback("${_playbackSpeed}x", Icons.speed_rounded);
     });
