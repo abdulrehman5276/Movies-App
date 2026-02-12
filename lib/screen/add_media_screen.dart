@@ -262,7 +262,7 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                     ),
                     const SizedBox(height: 30),
                     Text(
-                      'Uploading to MinIO server...',
+                      'Uploading To Server...',
                       style: GoogleFonts.outfit(
                         color: Colors.white,
                         fontSize: 18,

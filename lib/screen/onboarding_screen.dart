@@ -18,34 +18,29 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       title: 'Explore Unlimited Movies',
       description:
           'Discover thousands of movies and TV shows at your fingertips.',
-      imageUrl:
-          'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=1925&auto=format&fit=crop',
+      imageUrl: 'assets/images/onboarding_1.png',
     ),
     OnboardingData(
       title: 'Watch Anywhere',
       description:
           'Stream on your phone, tablet, laptop, and TV without paying more.',
-      imageUrl:
-          'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?q=80&w=2070&auto=format&fit=crop',
+      imageUrl: 'assets/images/onboarding_2.png',
     ),
     OnboardingData(
       title: 'Download & Go',
       description:
           'Save your favorites easily and always have something to watch.',
-      imageUrl:
-          'https://images.unsplash.com/photo-1560169897-bb636e0d3758?q=80&w=1935&auto=format&fit=crop',
+      imageUrl: 'assets/images/onboarding_3.png',
     ),
     OnboardingData(
       title: 'Personalized For You',
       description: 'Get recommendations based on your unique movie taste.',
-      imageUrl:
-          'https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=2070&auto=format&fit=crop',
+      imageUrl: 'assets/images/onboarding_4.png',
     ),
     OnboardingData(
       title: 'Join The Community',
       description: 'Rate, review and share your favorite cinematic moments.',
-      imageUrl:
-          'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?q=80&w=2070&auto=format&fit=crop',
+      imageUrl: 'assets/images/onboarding_5.png',
     ),
   ];
 
@@ -194,7 +189,7 @@ class OnboardingPage extends StatelessWidget {
     return Stack(
       children: [
         // Background Image
-        Positioned.fill(child: Image.network(data.imageUrl, fit: BoxFit.cover)),
+        Positioned.fill(child: Image.asset(data.imageUrl, fit: BoxFit.cover)),
         // Gradient Overlay
         Positioned.fill(
           child: Container(

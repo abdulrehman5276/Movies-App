@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-
 import 'package:provider/provider.dart';
 import 'package:movies_app/services/media_provider.dart';
-import 'package:movies_app/screen/homescreen.dart';
+import 'package:movies_app/screen/splash_screen.dart';
 
 void main() {
   runApp(
@@ -30,7 +29,7 @@ class MyApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
       ),
-      home: HomeScreen(),
+      home: SplashScreen(),
     );
   }
 }

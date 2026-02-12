@@ -23,9 +23,7 @@ class _SignUpPageState extends State<SignUpPage> {
           Container(
             decoration: const BoxDecoration(
               image: DecorationImage(
-                image: NetworkImage(
-                  'https://images.unsplash.com/photo-1542204111-974c4a2e50e1?q=80&w=2000&auto=format&fit=crop',
-                ),
+                image: AssetImage('assets/images/signup_bg.png'),
                 fit: BoxFit.cover,
               ),
             ),

@@ -215,10 +215,10 @@ class _MediaExplorer extends StatelessWidget {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(
+            Image.asset(
               isFavoritesOnly
-                  ? 'https://images.unsplash.com/photo-1494145942169-d60238515742?q=80&w=2070&auto=format&fit=crop'
-                  : 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=1925&auto=format&fit=crop',
+                  ? 'assets/images/fav_bg.png'
+                  : 'assets/images/home_bg.png',
               fit: BoxFit.cover,
             ),
             Container(
