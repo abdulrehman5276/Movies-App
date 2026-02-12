@@ -10,14 +10,38 @@ import 'package:path/path.dart' as p;
 class MediaProvider with ChangeNotifier {
   List<MediaModel> _mediaList = [];
   bool _isLoading = true;
+  Set<String> _watchedIds = {};
 
-  List<MediaModel> get mediaList => _mediaList;
+  List<MediaModel> get mediaList {
+    final sortedList = List<MediaModel>.from(_mediaList);
+    sortedList.sort((a, b) {
+      final dateA = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final dateB = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return dateB.compareTo(dateA); // Newest first
+    });
+    return sortedList;
+  }
+
   List<MediaModel> get favorites =>
-      _mediaList.where((m) => m.isFavorite).toList();
+      mediaList.where((m) => m.isFavorite).toList();
+
+  List<MediaModel> get downloads =>
+      mediaList.where((m) => m.isDownloaded).toList();
+
+  int get watchedCount => _watchedIds.length;
   bool get isLoading => _isLoading;
 
   MediaProvider() {
     loadMedia();
+  }
+
+  Future<void> addToWatched(String id) async {
+    if (!_watchedIds.contains(id)) {
+      _watchedIds.add(id);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('watched_ids', _watchedIds.toList());
+      notifyListeners();
+    }
   }
 
   Future<void> refreshMedia() async {
@@ -34,8 +58,14 @@ class MediaProvider with ChangeNotifier {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final String? mediaData = prefs.getString('media_list');
 
+    // Load Watched IDs
+    final watched = prefs.getStringList('watched_ids');
+    if (watched != null) {
+      _watchedIds = watched.toSet();
+    }
+
+    final String? mediaData = prefs.getString('media_list');
     if (mediaData != null) {
       final List<dynamic> decoded = jsonDecode(mediaData);
       _mediaList = decoded.map((m) => MediaModel.fromJson(m)).toList();
@@ -47,6 +77,7 @@ class MediaProvider with ChangeNotifier {
           title: "Movie.mp4",
           url: "http://192.168.1.2:9000/movies/Movie.mp4",
           category: 'Trending',
+          createdAt: DateTime.now().subtract(const Duration(days: 1)),
         ),
         MediaModel(
           id: '2',
@@ -54,6 +85,7 @@ class MediaProvider with ChangeNotifier {
           url:
               "http://192.168.1.2:9000/movies/WhatsApp%20Video%202026-02-11%20at%2011.49.12%20AM.mp4",
           category: 'New Release',
+          createdAt: DateTime.now(),
         ),
       ];
       await saveMedia();
@@ -75,7 +107,8 @@ class MediaProvider with ChangeNotifier {
       // 1. Remove items that are NOT on the server anymore
       _mediaList.removeWhere((item) {
         if (item.url.contains(MinioService.endpoint)) {
-          final fileName = p.basename(Uri.parse(item.url).path);
+          final uri = Uri.parse(item.url);
+          final fileName = Uri.decodeComponent(p.basename(uri.path));
           if (!serverFiles.contains(fileName)) {
             changed = true;
             return true;
@@ -86,8 +119,9 @@ class MediaProvider with ChangeNotifier {
 
       // 2. Add items that ARE on the server but NOT in our list
       for (final fileName in serverFiles) {
+        final encodedName = Uri.encodeComponent(fileName);
         final expectedUrl =
-            'http://${MinioService.endpoint}:${MinioService.port}/${MinioService.bucket}/$fileName';
+            'http://${MinioService.endpoint}:${MinioService.port}/${MinioService.bucket}/$encodedName';
 
         // Check if this URL (or a decoded version of it) is already in our list
         bool alreadyExists = _mediaList.any(
@@ -112,6 +146,7 @@ class MediaProvider with ChangeNotifier {
               title: p.basenameWithoutExtension(fileName),
               url: expectedUrl,
               category: category,
+              createdAt: DateTime.now(),
             ),
           );
           changed = true;
@@ -136,7 +171,18 @@ class MediaProvider with ChangeNotifier {
   }
 
   Future<void> addMedia(MediaModel media) async {
-    _mediaList.add(media);
+    // Add new media with current timestamp
+    final newMedia = MediaModel(
+      id: media.id,
+      title: media.title,
+      url: media.url,
+      description: media.description,
+      category: media.category,
+      isFavorite: media.isFavorite,
+      isDownloaded: media.isDownloaded,
+      createdAt: DateTime.now(),
+    );
+    _mediaList.add(newMedia);
     await saveMedia();
     notifyListeners();
   }
@@ -150,12 +196,23 @@ class MediaProvider with ChangeNotifier {
     }
   }
 
+  Future<void> toggleDownloaded(String id, {bool? forceValue}) async {
+    final index = _mediaList.indexWhere((m) => m.id == id);
+    if (index != -1) {
+      _mediaList[index].isDownloaded =
+          forceValue ?? !_mediaList[index].isDownloaded;
+      await saveMedia();
+      notifyListeners();
+    }
+  }
+
   Future<void> deleteMedia(MediaModel media) async {
     try {
       // 1. Delete from MinIO if it's a MinIO URL
       if (media.url.contains(MinioService.endpoint)) {
         final minioService = MinioService();
-        final fileName = p.basename(Uri.parse(media.url).path);
+        final uri = Uri.parse(media.url);
+        final fileName = Uri.decodeComponent(p.basename(uri.path));
         await minioService.deleteMedia(fileName);
       }
 
@@ -172,8 +229,6 @@ class MediaProvider with ChangeNotifier {
     try {
       final dio = Dio();
       final dir = await getApplicationDocumentsDirectory();
-      // For mobile, maybe use external storage or gallery saver
-      // For this demo, we'll save to app docs and show a message
       final filePath = "${dir.path}/${media.title}";
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -181,6 +236,9 @@ class MediaProvider with ChangeNotifier {
       );
 
       await dio.download(media.url, filePath);
+
+      // Update downloaded status
+      await toggleDownloaded(media.id, forceValue: true);
 
       ScaffoldMessenger.of(
         context,

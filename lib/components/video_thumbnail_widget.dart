@@ -21,6 +21,17 @@ class _VideoThumbnailWidgetState extends State<VideoThumbnailWidget> {
     _initializePreview();
   }
 
+  @override
+  void didUpdateWidget(VideoThumbnailWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoUrl != widget.videoUrl) {
+      _controller.dispose();
+      _isInitialized = false;
+      _hasError = false;
+      _initializePreview();
+    }
+  }
+
   Future<void> _initializePreview() async {
     String url = widget.videoUrl;
     // Android emulator redirect

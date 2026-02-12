@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
+import '../components/video_thumbnail_widget.dart';
 
 class AddMediaScreen extends StatefulWidget {
   const AddMediaScreen({super.key});
@@ -21,13 +22,18 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
   final _titleController = TextEditingController();
   final _urlController = TextEditingController();
   final _descriptionController = TextEditingController();
-  File? _selectedFile;
+  List<File> _selectedFiles = [];
+  Map<int, String> _customTitles = {};
+
   bool _isUploading = false;
+  bool _isPickingFile = false;
   double _uploadProgress = 0.0;
+  String _uploadStatus = "";
   final MinioService _minioService = MinioService();
 
   Future<void> _pickVideo() async {
-    // Request permissions
+    if (_isPickingFile || _isUploading) return;
+
     if (Platform.isAndroid || Platform.isIOS) {
       if (await Permission.videos.request().isGranted ||
           await Permission.storage.request().isGranted) {
@@ -35,9 +41,7 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Storage permission is required to pick files'),
-            ),
+            const SnackBar(content: Text('Storage permission is required')),
           );
         }
       }
@@ -47,21 +51,116 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
   }
 
   Future<void> _executePicker() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['mp4', 'mp3', 'mov', 'wav', 'm4a', 'mkv'],
-    );
+    if (_isPickingFile) return;
+    setState(() => _isPickingFile = true);
 
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _selectedFile = File(result.files.single.path!);
-        if (_titleController.text.isEmpty) {
-          // Auto-fill title with filename
-          _titleController.text = p.basenameWithoutExtension(
-            _selectedFile!.path,
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mp4', 'mp3', 'mov', 'wav', 'm4a', 'mkv'],
+        allowMultiple: true,
+      );
+
+      if (result != null) {
+        setState(() {
+          for (var path in result.paths.whereType<String>()) {
+            final file = File(path);
+            _selectedFiles.add(file);
+            _customTitles[_selectedFiles.length - 1] = p
+                .basenameWithoutExtension(path);
+          }
+          if (_selectedFiles.length == 1 && _titleController.text.isEmpty) {
+            _titleController.text = _customTitles[0]!;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('File picker error: $e');
+    } finally {
+      if (mounted) setState(() => _isPickingFile = false);
+    }
+  }
+
+  MediaModel _createMediaModel(
+    String url,
+    String title,
+    String pathToCheck,
+    int index,
+  ) {
+    String detectedCategory = 'Media';
+    final extension = p.extension(pathToCheck).toLowerCase();
+
+    if (extension == '.mp3' || extension == '.wav' || extension == '.m4a') {
+      detectedCategory = 'Songs';
+    } else if (extension == '.mp4' ||
+        extension == '.mov' ||
+        extension == '.mkv') {
+      detectedCategory = 'Movies';
+    }
+
+    return MediaModel(
+      id: '${DateTime.now().millisecondsSinceEpoch}_$index',
+      title: title,
+      url: url,
+      description: _descriptionController.text,
+      category: detectedCategory,
+    );
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isUploading = true);
+    final provider = Provider.of<MediaProvider>(context, listen: false);
+
+    try {
+      if (_selectedFiles.isNotEmpty) {
+        for (int i = 0; i < _selectedFiles.length; i++) {
+          final file = _selectedFiles[i];
+          if (mounted) {
+            setState(() {
+              _uploadStatus = "Uploading ${i + 1} of ${_selectedFiles.length}";
+              _uploadProgress = 0.0;
+            });
+          }
+
+          final url = await _minioService.uploadVideo(
+            file,
+            onProgress: (p) {
+              if (mounted) setState(() => _uploadProgress = p);
+            },
           );
+
+          final title =
+              _selectedFiles.length == 1 && _titleController.text.isNotEmpty
+              ? _titleController.text
+              : (_customTitles[i] ?? p.basenameWithoutExtension(file.path));
+
+          provider.addMedia(_createMediaModel(url, title, file.path, i));
         }
-      });
+      } else {
+        provider.addMedia(
+          _createMediaModel(
+            _urlController.text,
+            _titleController.text,
+            _urlController.text,
+            0,
+          ),
+        );
+      }
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -91,8 +190,6 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                     ),
                   ),
                   const SizedBox(height: 30),
-
-                  // File Picker Section
                   GestureDetector(
                     onTap: _pickVideo,
                     child: Container(
@@ -102,96 +199,39 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                         color: Colors.grey[900],
                         borderRadius: BorderRadius.circular(15),
                         border: Border.all(
-                          color: _selectedFile != null
+                          color: _selectedFiles.isNotEmpty
                               ? Colors.redAccent
                               : Colors.grey[700]!,
                           width: 2,
-                          style: BorderStyle.solid,
                         ),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _selectedFile != null
-                                ? Icons.video_file
-                                : Icons.cloud_upload_outlined,
-                            size: 50,
-                            color: _selectedFile != null
-                                ? Colors.redAccent
-                                : Colors.grey,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            _selectedFile != null
-                                ? p.basename(_selectedFile!.path)
-                                : 'Tap to pick media from phone',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.outfit(
-                              color: _selectedFile != null
-                                  ? Colors.white
-                                  : Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: _isPickingFile
+                          ? _buildPickerLoading()
+                          : _buildPickerPlaceholder(),
                     ),
                   ),
-                  const SizedBox(height: 30),
-
+                  if (_selectedFiles.isNotEmpty) _buildSelectedFilesList(),
+                  const SizedBox(height: 10),
                   _buildTextField(
                     controller: _titleController,
                     label: 'Title',
-                    hint: 'Enter song or movie title',
+                    hint: 'Enter title (optional for multiple)',
                     icon: Icons.title,
-                    validator: (v) =>
-                        v!.isEmpty ? 'Please enter a title' : null,
+                    validator: (v) => (_selectedFiles.length <= 1 && v!.isEmpty)
+                        ? 'Enter a title'
+                        : null,
                   ),
                   const SizedBox(height: 20),
-
-                  if (_selectedFile == null)
+                  if (_selectedFiles.isEmpty)
                     _buildTextField(
                       controller: _urlController,
                       label: 'Or Video URL',
                       hint: 'https://example.com/video.mp4',
                       icon: Icons.link,
-                      validator: (v) => (_selectedFile == null && v!.isEmpty)
-                          ? 'Please enter a URL or pick a file'
+                      validator: (v) => (_selectedFiles.isEmpty && v!.isEmpty)
+                          ? 'Enter URL or pick files'
                           : null,
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'File selected. It will be uploaded to MinIO.',
-                              style: GoogleFonts.outfit(
-                                color: Colors.white70,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.grey),
-                            onPressed: () =>
-                                setState(() => _selectedFile = null),
-                          ),
-                        ],
-                      ),
                     ),
-
                   const SizedBox(height: 20),
                   _buildTextField(
                     controller: _descriptionController,
@@ -200,79 +240,234 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                     icon: Icons.description,
                     maxLines: 3,
                   ),
-                  const SizedBox(height: 20),
                   const SizedBox(height: 50),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      onPressed: _isUploading ? null : _submit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        elevation: 5,
-                      ),
-                      child: _isUploading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Text(
-                              'Save & Upload',
-                              style: GoogleFonts.outfit(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                    ),
-                  ),
+                  _buildSubmitButton(),
                 ],
               ),
             ),
           ),
-          if (_isUploading)
-            Container(
-              color: Colors.black.withValues(alpha: 0.8),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+          if (_isUploading) _buildUploadOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPickerLoading() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const CircularProgressIndicator(color: Colors.redAccent),
+        const SizedBox(height: 15),
+        Text('Processing...', style: GoogleFonts.outfit(color: Colors.white70)),
+      ],
+    );
+  }
+
+  Widget _buildPickerPlaceholder() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          _selectedFiles.isNotEmpty
+              ? Icons.video_library
+              : Icons.cloud_upload_outlined,
+          size: 50,
+          color: _selectedFiles.isNotEmpty ? Colors.redAccent : Colors.grey,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _selectedFiles.isNotEmpty
+              ? '${_selectedFiles.length} Files Selected'
+              : 'Tap to pick media (Multiple)',
+          style: GoogleFonts.outfit(
+            color: _selectedFiles.isNotEmpty ? Colors.white : Colors.grey,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSelectedFilesList() {
+    return Container(
+      padding: const EdgeInsets.only(top: 20),
+      child: ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _selectedFiles.length,
+        itemBuilder: (context, index) {
+          final file = _selectedFiles[index];
+          final extension = p.extension(file.path).toLowerCase();
+          final isVideo = ['.mp4', '.mov', '.mkv'].contains(extension);
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white10,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            ),
+            child: Column(
+              children: [
+                Row(
                   children: [
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          height: 100,
-                          width: 100,
-                          child: CircularProgressIndicator(
-                            value: _uploadProgress,
-                            color: Colors.redAccent,
-                            strokeWidth: 8,
-                            backgroundColor: Colors.white24,
-                          ),
-                        ),
-                        Text(
-                          "${(_uploadProgress * 100).toInt()}%",
-                          style: GoogleFonts.outfit(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 30),
-                    Text(
-                      'Uploading To Server...',
-                      style: GoogleFonts.outfit(
-                        color: Colors.white,
-                        fontSize: 18,
+                    // Thumbnail / Icon
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 80,
+                        height: 50,
+                        color: Colors.black26,
+                        child: isVideo
+                            ? VideoThumbnailWidget(videoUrl: file.path)
+                            : const Icon(
+                                Icons.audiotrack_rounded,
+                                color: Colors.redAccent,
+                              ),
                       ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.basename(file.path),
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${(file.lengthSync() / (1024 * 1024)).toStringAsFixed(2)} MB',
+                            style: GoogleFonts.outfit(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.redAccent,
+                        size: 22,
+                      ),
+                      onPressed: () => setState(() {
+                        _selectedFiles.removeAt(index);
+                        _customTitles.remove(index);
+                        // Re-map titles
+                        final newTitles = <int, String>{};
+                        _customTitles.forEach((key, value) {
+                          if (key > index)
+                            newTitles[key - 1] = value;
+                          else if (key < index)
+                            newTitles[key] = value;
+                        });
+                        _customTitles = newTitles;
+                      }),
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 12),
+                // Individual Title Edit
+                TextField(
+                  onChanged: (val) => _customTitles[index] = val,
+                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Custom title for this file...',
+                    hintStyle: const TextStyle(color: Colors.white24),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.edit_rounded,
+                      size: 16,
+                      color: Colors.white38,
+                    ),
+                  ),
+                  controller: TextEditingController(text: _customTitles[index])
+                    ..selection = TextSelection.fromPosition(
+                      TextPosition(offset: (_customTitles[index] ?? "").length),
+                    ),
+                ),
+              ],
             ),
-        ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: ElevatedButton(
+        onPressed: _isUploading ? null : _submit,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.redAccent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+        child: Text(
+          'Save & Upload',
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUploadOverlay() {
+    return Container(
+      color: Colors.black87,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  height: 120,
+                  width: 120,
+                  child: CircularProgressIndicator(
+                    value: _uploadProgress,
+                    color: Colors.redAccent,
+                    strokeWidth: 10,
+                    backgroundColor: Colors.white12,
+                  ),
+                ),
+                Text(
+                  "${(_uploadProgress * 100).toInt()}%",
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 30),
+            Text(
+              _uploadStatus,
+              style: GoogleFonts.outfit(color: Colors.white, fontSize: 18),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -289,74 +484,23 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
       controller: controller,
       maxLines: maxLines,
       validator: validator,
+      style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        labelStyle: const TextStyle(color: Colors.grey),
+        hintStyle: const TextStyle(color: Colors.white24),
         prefixIcon: Icon(icon, color: Colors.redAccent),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: Colors.white10),
+        ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
           borderSide: const BorderSide(color: Colors.redAccent, width: 2),
         ),
       ),
     );
-  }
-
-  Future<void> _submit() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isUploading = true);
-
-      try {
-        String finalUrl = _urlController.text;
-
-        // If a file was picked, upload it first
-        if (_selectedFile != null) {
-          finalUrl = await _minioService.uploadVideo(
-            _selectedFile!,
-            onProgress: (p) {
-              if (mounted) setState(() => _uploadProgress = p);
-            },
-          );
-        }
-
-        String detectedCategory = 'Media';
-        final pathToCheck = _selectedFile?.path ?? finalUrl;
-        final extension = p.extension(pathToCheck).toLowerCase();
-
-        if (extension == '.mp3' || extension == '.wav' || extension == '.m4a') {
-          detectedCategory = 'Songs';
-        } else if (extension == '.mp4' ||
-            extension == '.mov' ||
-            extension == '.mkv') {
-          detectedCategory = 'Movies';
-        }
-
-        final media = MediaModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          title: _titleController.text,
-          url: finalUrl,
-          description: _descriptionController.text,
-          category: detectedCategory,
-        );
-
-        if (mounted) {
-          Provider.of<MediaProvider>(context, listen: false).addMedia(media);
-          Navigator.pop(context);
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Upload failed: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() => _isUploading = false);
-        }
-      }
-    }
   }
 }

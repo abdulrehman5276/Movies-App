@@ -1,6 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:movies_app/screen/homescreen.dart';
+import 'package:movies_app/services/auth_service.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -11,8 +13,79 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final AuthService _authService = AuthService();
+
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
+  bool _isLoading = false;
+
+  void _handleSignUp() async {
+    if (_formKey.currentState!.validate()) {
+      if (_passwordController.text != _confirmPasswordController.text) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      try {
+        final userCredential = await _authService.signUpWithEmail(
+          _emailController.text.trim(),
+          _passwordController.text,
+          _nameController.text.trim(),
+        );
+
+        if (userCredential != null && mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.toString()),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _handleGoogleSignUp() async {
+    setState(() => _isLoading = true);
+    try {
+      final userCredential = await _authService.signInWithGoogle();
+      if (userCredential != null && mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +134,13 @@ class _SignUpPageState extends State<SignUpPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      if (_isLoading)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 20),
+                          child: CircularProgressIndicator(
+                            color: Colors.redAccent,
+                          ),
+                        ),
                       const SizedBox(height: 20),
                       // App Logo / Icon
                       Hero(
@@ -117,17 +197,22 @@ class _SignUpPageState extends State<SignUpPage> {
                             _buildTextField(
                               hintText: 'Full Name',
                               icon: Icons.person_outline,
+                              controller: _nameController,
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 16),
                             _buildTextField(
                               hintText: 'Email Address',
                               icon: Icons.email_outlined,
+                              controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 16),
                             _buildTextField(
                               hintText: 'Password',
                               icon: Icons.lock_outline,
+                              controller: _passwordController,
                               isPassword: true,
                               isPasswordVisible: _isPasswordVisible,
                               onVisibilityToggle: () {
@@ -135,11 +220,14 @@ class _SignUpPageState extends State<SignUpPage> {
                                   _isPasswordVisible = !_isPasswordVisible;
                                 });
                               },
+                              validator: (v) =>
+                                  v!.length < 6 ? 'Min 6 chars' : null,
                             ),
                             const SizedBox(height: 16),
                             _buildTextField(
                               hintText: 'Confirm Password',
                               icon: Icons.lock_clock_outlined,
+                              controller: _confirmPasswordController,
                               isPassword: true,
                               isPasswordVisible: _isConfirmPasswordVisible,
                               onVisibilityToggle: () {
@@ -148,6 +236,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                       !_isConfirmPasswordVisible;
                                 });
                               },
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 32),
                             // Sign Up Button
@@ -173,9 +262,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ],
                               ),
                               child: ElevatedButton(
-                                onPressed: () {
-                                  // Add logic to register
-                                },
+                                onPressed: _isLoading ? null : _handleSignUp,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
@@ -215,7 +302,10 @@ class _SignUpPageState extends State<SignUpPage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _socialButton(Icons.g_mobiledata_rounded, () {}),
+                          _socialButton(
+                            Icons.g_mobiledata_rounded,
+                            _isLoading ? null : _handleGoogleSignUp,
+                          ),
                           _socialButton(Icons.apple_rounded, () {}),
                           _socialButton(Icons.facebook_rounded, () {}),
                         ],
@@ -284,6 +374,8 @@ class _SignUpPageState extends State<SignUpPage> {
     bool isPasswordVisible = false,
     VoidCallback? onVisibilityToggle,
     TextInputType keyboardType = TextInputType.text,
+    TextEditingController? controller,
+    String? Function(String?)? validator,
   }) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -296,6 +388,8 @@ class _SignUpPageState extends State<SignUpPage> {
             border: Border.all(color: Colors.white.withAlpha(25)),
           ),
           child: TextFormField(
+            controller: controller,
+            validator: validator,
             obscureText: isPassword && !isPasswordVisible,
             keyboardType: keyboardType,
             style: GoogleFonts.outfit(color: Colors.white),
@@ -326,7 +420,7 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
-  Widget _socialButton(IconData icon, VoidCallback onTap) {
+  Widget _socialButton(IconData icon, VoidCallback? onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),

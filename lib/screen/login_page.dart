@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:movies_app/screen/homescreen.dart';
 import 'package:movies_app/screen/sign_up_page.dart';
+import 'package:movies_app/services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,7 +14,42 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final AuthService _authService = AuthService();
+
   bool _isPasswordVisible = false;
+  bool _isLoading = false;
+
+  void _handleSignIn() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+      try {
+        final userCredential = await _authService.signInWithEmail(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+
+        if (userCredential != null && mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.toString()),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +98,15 @@ class _LoginPageState extends State<LoginPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      // Loading Indicator (only visible when _isLoading is true)
+                      if (_isLoading)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 20),
+                          child: CircularProgressIndicator(
+                            color: Colors.redAccent,
+                          ),
+                        ),
+
                       // Logo & Header
                       Hero(
                         tag: 'app_logo',
@@ -117,12 +162,15 @@ class _LoginPageState extends State<LoginPage> {
                             _buildTextField(
                               hintText: 'Email Address',
                               icon: Icons.email_outlined,
+                              controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 16),
                             _buildTextField(
                               hintText: 'Password',
                               icon: Icons.lock_outline,
+                              controller: _passwordController,
                               isPassword: true,
                               isPasswordVisible: _isPasswordVisible,
                               onVisibilityToggle: () {
@@ -130,6 +178,7 @@ class _LoginPageState extends State<LoginPage> {
                                   _isPasswordVisible = !_isPasswordVisible;
                                 });
                               },
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 12),
                             Align(
@@ -169,14 +218,7 @@ class _LoginPageState extends State<LoginPage> {
                                 ],
                               ),
                               child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const HomeScreen(),
-                                    ),
-                                  );
-                                },
+                                onPressed: _isLoading ? null : _handleSignIn,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
@@ -219,7 +261,52 @@ class _LoginPageState extends State<LoginPage> {
                           _socialButton(
                             'google',
                             Icons.g_mobiledata_rounded,
-                            () {},
+                            _isLoading
+                                ? null
+                                : () async {
+                                    setState(() => _isLoading = true);
+                                    try {
+                                      final authService = AuthService();
+                                      final userCredential = await authService
+                                          .signInWithGoogle();
+                                      if (userCredential != null && mounted) {
+                                        Navigator.pushReplacement(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const HomeScreen(),
+                                          ),
+                                        );
+                                      } else if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Google Sign-In was cancelled.',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orangeAccent,
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(e.toString()),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                      }
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() => _isLoading = false);
+                                      }
+                                    }
+                                  },
                           ),
                           _socialButton('apple', Icons.apple_rounded, () {}),
                           _socialButton(
@@ -277,6 +364,8 @@ class _LoginPageState extends State<LoginPage> {
     bool isPasswordVisible = false,
     VoidCallback? onVisibilityToggle,
     TextInputType keyboardType = TextInputType.text,
+    TextEditingController? controller,
+    String? Function(String?)? validator,
   }) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -289,6 +378,8 @@ class _LoginPageState extends State<LoginPage> {
             border: Border.all(color: Colors.white.withAlpha(30)),
           ),
           child: TextFormField(
+            controller: controller,
+            validator: validator,
             obscureText: isPassword && !isPasswordVisible,
             keyboardType: keyboardType,
             style: GoogleFonts.outfit(color: Colors.white),
@@ -319,7 +410,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _socialButton(String type, IconData icon, VoidCallback onTap) {
+  Widget _socialButton(String type, IconData icon, VoidCallback? onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),

@@ -51,7 +51,8 @@ class MinioService {
     );
 
     // 3. Return the public URL
-    return 'http://$endpoint:$port/$bucket/$fileName';
+    final encodedFileName = Uri.encodeComponent(fileName);
+    return 'http://$endpoint:$port/$bucket/$encodedFileName';
   }
 
   Future<void> deleteMedia(String fileName) async {

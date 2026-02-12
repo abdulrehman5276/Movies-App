@@ -5,6 +5,8 @@ class MediaModel {
   final String? description;
   final String? category;
   bool isFavorite;
+  bool isDownloaded;
+  final DateTime? createdAt;
 
   MediaModel({
     required this.id,
@@ -13,6 +15,8 @@ class MediaModel {
     this.description,
     this.category,
     this.isFavorite = false,
+    this.isDownloaded = false,
+    this.createdAt,
   });
 
   Map<String, dynamic> toJson() {
@@ -23,6 +27,8 @@ class MediaModel {
       'description': description,
       'category': category,
       'isFavorite': isFavorite,
+      'isDownloaded': isDownloaded,
+      'createdAt': createdAt?.toIso8601String(),
     };
   }
 
@@ -34,6 +40,10 @@ class MediaModel {
       description: json['description'],
       category: json['category'],
       isFavorite: json['isFavorite'] ?? false,
+      isDownloaded: json['isDownloaded'] ?? false,
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
     );
   }
 }

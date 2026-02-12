@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:provider/provider.dart';
+import '../services/media_provider.dart';
 
 class VideoScreen extends StatefulWidget {
+  final String mediaId;
   final String videoUrl;
   final String title;
   final Map<String, String>? httpHeaders; // Added for Cloud Storage Auth
 
   const VideoScreen({
     super.key,
+    required this.mediaId,
     required this.videoUrl,
     required this.title,
     this.httpHeaders,
@@ -28,6 +32,14 @@ class _VideoScreenState extends State<VideoScreen> {
   void initState() {
     super.initState();
     _initializeVideo();
+
+    // Add to watched history
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<MediaProvider>(
+        context,
+        listen: false,
+      ).addToWatched(widget.mediaId);
+    });
   }
 
   void _initializeVideo() {
