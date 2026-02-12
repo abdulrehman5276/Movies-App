@@ -117,21 +117,23 @@ class _VideoScreenState extends State<VideoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: _isFullScreen
-          ? null
-          : AppBar(
-              backgroundColor: Colors.black,
-              title: Text(widget.title),
-              elevation: 0,
-            ),
-      body: Center(
-        child: _errorMessage != null
-            ? _buildErrorView()
-            : _isInitialized
-            ? _buildPlayerView()
-            : _buildLoadingView(),
+    return SafeArea(
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        appBar: _isFullScreen
+            ? null
+            : AppBar(
+                backgroundColor: Colors.black,
+                title: Text(widget.title),
+                elevation: 0,
+              ),
+        body: Center(
+          child: _errorMessage != null
+              ? _buildErrorView()
+              : _isInitialized
+              ? _buildPlayerView()
+              : _buildLoadingView(),
+        ),
       ),
     );
   }
@@ -142,10 +144,7 @@ class _VideoScreenState extends State<VideoScreen> {
       children: [
         CircularProgressIndicator(color: Colors.redAccent),
         SizedBox(height: 20),
-        Text(
-          "Streaming from cloud...",
-          style: TextStyle(color: Colors.white70),
-        ),
+        Text("Loading...", style: TextStyle(color: Colors.white70)),
       ],
     );
   }

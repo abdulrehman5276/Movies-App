@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'minio_service.dart';
 import 'package:path/path.dart' as p;
+import 'package:movies_app/config/app_config.dart';
 
 class MediaProvider with ChangeNotifier {
   List<MediaModel> _mediaList = [];
@@ -106,7 +107,7 @@ class MediaProvider with ChangeNotifier {
 
       // 1. Remove items that are NOT on the server anymore
       _mediaList.removeWhere((item) {
-        if (item.url.contains(MinioService.endpoint)) {
+        if (item.url.contains(AppConfig.minioIp)) {
           final uri = Uri.parse(item.url);
           final fileName = Uri.decodeComponent(p.basename(uri.path));
           if (!serverFiles.contains(fileName)) {
@@ -118,10 +119,10 @@ class MediaProvider with ChangeNotifier {
       });
 
       // 2. Add items that ARE on the server but NOT in our list
+      final baseUrl = AppConfig.baseUrl;
       for (final fileName in serverFiles) {
         final encodedName = Uri.encodeComponent(fileName);
-        final expectedUrl =
-            'http://${MinioService.endpoint}:${MinioService.port}/${MinioService.bucket}/$encodedName';
+        final expectedUrl = '$baseUrl/${AppConfig.bucket}/$encodedName';
 
         // Check if this URL (or a decoded version of it) is already in our list
         bool alreadyExists = _mediaList.any(
@@ -209,7 +210,7 @@ class MediaProvider with ChangeNotifier {
   Future<void> deleteMedia(MediaModel media) async {
     try {
       // 1. Delete from MinIO if it's a MinIO URL
-      if (media.url.contains(MinioService.endpoint)) {
+      if (media.url.contains(AppConfig.minioIp)) {
         final minioService = MinioService();
         final uri = Uri.parse(media.url);
         final fileName = Uri.decodeComponent(p.basename(uri.path));

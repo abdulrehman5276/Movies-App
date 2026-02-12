@@ -39,47 +39,48 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = _authService.currentUser;
     final bool isAdmin = user?.email == 'abdulrehmanpk79@gmail.com';
 
-    return Scaffold(
-      extendBody: true,
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: (index) {
-          setState(() => _selectedIndex = index);
-        },
-        children: [
-          const _MediaExplorer(isFavoritesOnly: false),
-          const _MediaExplorer(isFavoritesOnly: true),
-          const _DownloadsScreen(),
-          _buildProfileScreen(context),
-        ],
-      ),
-
-      bottomNavigationBar: _buildModernBottomNav(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: isAdmin
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 85),
-              child: FloatingActionButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AddMediaScreen(),
+    return SafeArea(
+      child: Scaffold(
+        extendBody: true,
+        body: PageView(
+          controller: _pageController,
+          onPageChanged: (index) {
+            setState(() => _selectedIndex = index);
+          },
+          children: [
+            const _MediaExplorer(isFavoritesOnly: false),
+            const _MediaExplorer(isFavoritesOnly: true),
+            const _DownloadsScreen(),
+            _buildProfileScreen(context),
+          ],
+        ),
+        bottomNavigationBar: _buildModernBottomNav(),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: isAdmin
+            ? Padding(
+                padding: const EdgeInsets.only(bottom: 85),
+                child: FloatingActionButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AddMediaScreen(),
+                    ),
+                  ),
+                  backgroundColor: Colors.redAccent,
+                  elevation: 12,
+                  highlightElevation: 16,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.add_rounded,
+                    color: Colors.white,
+                    size: 32,
                   ),
                 ),
-                backgroundColor: Colors.redAccent,
-                elevation: 12,
-                highlightElevation: 16,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(
-                  Icons.add_rounded,
-                  color: Colors.white,
-                  size: 32,
-                ),
-              ),
-            )
-          : null,
+              )
+            : null,
+      ),
     );
   }
 
@@ -496,23 +497,60 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _MediaExplorer extends StatelessWidget {
+class _MediaExplorer extends StatefulWidget {
   final bool isFavoritesOnly;
   const _MediaExplorer({required this.isFavoritesOnly});
+
+  @override
+  State<_MediaExplorer> createState() => _MediaExplorerState();
+}
+
+class _MediaExplorerState extends State<_MediaExplorer> {
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = "";
+  List<MediaModel> _suggestions = [];
+
+  void _updateSuggestions(String query, List<MediaModel> fullList) {
+    if (query.isEmpty) {
+      _suggestions = [];
+    } else {
+      _suggestions = fullList
+          .where((m) => m.title.toLowerCase().startsWith(query.toLowerCase()))
+          .take(5)
+          .toList();
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<MediaProvider>(
       builder: (context, provider, child) {
-        final list = isFavoritesOnly ? provider.favorites : provider.mediaList;
+        var baseList = widget.isFavoritesOnly
+            ? provider.favorites
+            : provider.mediaList;
+
+        // Filter list based on search query
+        final list = baseList.where((m) {
+          final query = _searchQuery.toLowerCase();
+          return m.title.toLowerCase().contains(query) ||
+              (m.description?.toLowerCase().contains(query) ?? false) ||
+              (m.category?.toLowerCase().contains(query) ?? false);
+        }).toList();
 
         if (provider.isLoading) {
-          return Center(
+          return const Center(
             child: CircularProgressIndicator(color: Colors.redAccent),
           );
         }
 
-        if (list.isEmpty) {
+        if (list.isEmpty && !provider.isLoading) {
           return RefreshIndicator(
             onRefresh: () => provider.refreshMedia(),
             color: Colors.redAccent,
@@ -526,22 +564,40 @@ class _MediaExplorer extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        isFavoritesOnly
-                            ? Icons.favorite_border
-                            : Icons.video_library_outlined,
+                        _searchQuery.isNotEmpty
+                            ? Icons.search_off_rounded
+                            : (widget.isFavoritesOnly
+                                  ? Icons.favorite_border
+                                  : Icons.video_library_outlined),
                         size: 80,
                         color: Colors.grey,
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        isFavoritesOnly
-                            ? 'No favorites yet'
-                            : 'No media added yet',
+                        _searchQuery.isNotEmpty
+                            ? 'No matches found for "$_searchQuery"'
+                            : (widget.isFavoritesOnly
+                                  ? 'No favorites yet'
+                                  : 'No media added yet'),
                         style: GoogleFonts.outfit(
                           color: Colors.grey,
                           fontSize: 18,
                         ),
                       ),
+                      if (_searchQuery.isNotEmpty)
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _searchQuery = "";
+                              _searchController.clear();
+                              _isSearching = false;
+                            });
+                          },
+                          child: const Text(
+                            'Clear Search',
+                            style: TextStyle(color: Colors.redAccent),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -556,8 +612,70 @@ class _MediaExplorer extends StatelessWidget {
           backgroundColor: Colors.grey[900],
           child: CustomScrollView(
             slivers: [
-              _buildSliverAppBar(context),
-              if (!isFavoritesOnly) ...[
+              _buildSliverAppBar(context, baseList),
+
+              // Search Suggestions (Vertical List)
+              if (_isSearching && _suggestions.isNotEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final suggestion = _suggestions[index];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.05),
+                          ),
+                        ),
+                        child: ListTile(
+                          dense: true,
+                          leading: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.history_rounded,
+                              size: 16,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                          title: Text(
+                            suggestion.title,
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.north_west_rounded,
+                            size: 16,
+                            color: Colors.white24,
+                          ),
+                          onTap: () {
+                            setState(() {
+                              _searchQuery = suggestion.title;
+                              _searchController.text = suggestion.title;
+                              _suggestions = [];
+                            });
+                          },
+                        ),
+                      );
+                    }, childCount: _suggestions.length),
+                  ),
+                ),
+
+              if (_searchQuery.isEmpty &&
+                  !widget.isFavoritesOnly &&
+                  list.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
@@ -577,7 +695,7 @@ class _MediaExplorer extends StatelessWidget {
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 15),
-                      itemCount: list.length,
+                      itemCount: list.length > 5 ? 5 : list.length,
                       itemBuilder: (context, index) =>
                           _CompactMediaCard(media: list[index]),
                     ),
@@ -588,7 +706,11 @@ class _MediaExplorer extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 30, 20, 10),
                   child: Text(
-                    isFavoritesOnly ? 'Your Favorites' : 'All Media',
+                    _searchQuery.isNotEmpty
+                        ? 'Search Results'
+                        : (widget.isFavoritesOnly
+                              ? 'Your Favorites'
+                              : 'All Media'),
                     style: GoogleFonts.outfit(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -609,7 +731,7 @@ class _MediaExplorer extends StatelessWidget {
                   ),
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              const SliverToBoxAdapter(child: SizedBox(height: 150)),
             ],
           ),
         );
@@ -617,17 +739,27 @@ class _MediaExplorer extends StatelessWidget {
     );
   }
 
-  Widget _buildSliverAppBar(BuildContext context) {
+  Widget _buildSliverAppBar(BuildContext context, List<MediaModel> baseList) {
     return SliverAppBar(
-      expandedHeight: 300,
+      expandedHeight: _isSearching ? 120 : 300,
       floating: false,
       pinned: true,
       stretch: true,
       backgroundColor: Colors.black,
-      leading: isFavoritesOnly
+      actions: [
+        if (!_isSearching)
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () => setState(() => _isSearching = true),
+          ),
+        const SizedBox(width: 8),
+      ],
+      leading: widget.isFavoritesOnly
           ? IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded),
-              onPressed: () {}, // Handled by bottom nav
+              onPressed: () => DefaultTabController.of(
+                context,
+              ).animateTo(0), // Placeholder logic
             )
           : null,
       flexibleSpace: FlexibleSpaceBar(
@@ -636,46 +768,129 @@ class _MediaExplorer extends StatelessWidget {
           StretchMode.zoomBackground,
           StretchMode.blurBackground,
         ],
-        title: Text(
-          isFavoritesOnly ? 'FAVORITES' : 'CINEVERSE',
-          style: GoogleFonts.outfit(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 4,
-            fontSize: 22,
-            shadows: [
-              const Shadow(
-                offset: Offset(0, 2),
-                blurRadius: 10,
-                color: Colors.black,
-              ),
-            ],
-          ),
-        ),
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.asset(
-              isFavoritesOnly
-                  ? 'assets/images/fav_bg.png'
-                  : 'assets/images/home_bg.png',
-              fit: BoxFit.cover,
-            ),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0.0, 0.5, 1.0],
-                  colors: [
-                    Colors.black.withValues(alpha: 0.5),
-                    Colors.transparent,
-                    Colors.black,
+        title: _isSearching
+            ? AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(25),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  textAlign: TextAlign.start,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  onChanged: (val) {
+                    setState(() {
+                      _searchQuery = val;
+                      _updateSuggestions(val, baseList);
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Search for movies...',
+                    hintStyle: GoogleFonts.outfit(
+                      color: Colors.white38,
+                      fontSize: 15,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      color: Colors.redAccent,
+                      size: 20,
+                    ),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_searchQuery.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(
+                              Icons.clear_rounded,
+                              size: 18,
+                              color: Colors.white54,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _searchQuery = "";
+                                _searchController.clear();
+                                _suggestions = [];
+                              });
+                            },
+                          ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            size: 20,
+                            color: Colors.white54,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isSearching = false;
+                              _searchQuery = "";
+                              _searchController.clear();
+                              _suggestions = [];
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              )
+            : Text(
+                widget.isFavoritesOnly ? 'FAVORITES' : 'CINEVERSE',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                  fontSize: 22,
+                  shadows: [
+                    const Shadow(
+                      offset: Offset(0, 2),
+                      blurRadius: 10,
+                      color: Colors.black,
+                    ),
                   ],
                 ),
               ),
-            ),
-          ],
-        ),
+
+        background: _isSearching
+            ? null
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    widget.isFavoritesOnly
+                        ? 'assets/images/fav_bg.png'
+                        : 'assets/images/home_bg.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (c, e, s) =>
+                        Container(color: Colors.grey[900]),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: const [0.0, 0.5, 1.0],
+                        colors: [
+                          Colors.black.withValues(alpha: 0.5),
+                          Colors.transparent,
+                          Colors.black,
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -831,15 +1046,30 @@ class _CompactMediaCard extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close confirmation dialog
+
+              // Show loading dialog
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const PopScope(
+                  canPop: false,
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.redAccent),
+                  ),
+                ),
+              );
+
               try {
                 await provider.deleteMedia(media);
+                if (context.mounted) Navigator.pop(context); // Close loading
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Media deleted from server')),
                   );
                 }
               } catch (e) {
+                if (context.mounted) Navigator.pop(context); // Close loading
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -1053,15 +1283,30 @@ class _LargeMediaCard extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close confirmation dialog
+
+              // Show loading dialog
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const PopScope(
+                  canPop: false,
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.redAccent),
+                  ),
+                ),
+              );
+
               try {
                 await provider.deleteMedia(media);
+                if (context.mounted) Navigator.pop(context); // Close loading
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Media deleted from server')),
                   );
                 }
               } catch (e) {
+                if (context.mounted) Navigator.pop(context); // Close loading
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -1260,7 +1505,7 @@ class _DownloadsScreen extends StatelessWidget {
               );
             },
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          const SliverToBoxAdapter(child: SizedBox(height: 150)),
         ],
       ),
     );
