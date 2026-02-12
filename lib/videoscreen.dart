@@ -26,6 +26,9 @@ class _VideoScreenState extends State<VideoScreen>
   Timer? _hideTimer;
   bool _isInitialized = false;
 
+  bool _isDragging = false;
+  double _dragValue = 0.0;
+
   // Gesture Feedback
   String _showText = "";
   IconData? _showIcon;
@@ -35,22 +38,40 @@ class _VideoScreenState extends State<VideoScreen>
   @override
   void initState() {
     super.initState();
-    _controller =
-        VideoPlayerController.networkUrl(
-            Uri.parse(
-              "https://dwpgnjixbmvyjaanhtlg.supabase.co/storage/v1/object/sign/Movies/WhatsApp%20Video%202026-02-11%20at%2011.49.12%20AM.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9mYmIwNjVjMy0xOWZjLTQ1MmMtYTgwYS0yZTk5ZGJkMGVlYjEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJNb3ZpZXMvV2hhdHNBcHAgVmlkZW8gMjAyNi0wMi0xMSBhdCAxMS40OS4xMiBBTS5tcDQiLCJpYXQiOjE3NzA3OTY0MDYsImV4cCI6MTgwMjMzMjQwNn0.qFlZTWbA02AgUEpE_MSSwWDzQ7NHWHgQgDZXxD1KAAA",
-            ),
-          )
-          ..initialize().then((_) {
+    _controller = VideoPlayerController.networkUrl(
+      Uri.parse("http://192.168.1.2:9000/movies/Movie.mp4"),
+    );
+
+    _controller
+        .initialize()
+        .then((_) {
+          if (mounted) {
             setState(() {
               _isInitialized = true;
             });
             _controller.play();
             _controller.setLooping(true);
-          });
+          }
+        })
+        .catchError((error) {
+          debugPrint("Video Player Error: $error");
+          if (mounted) {
+            setState(() {
+              _isInitialized = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Error loading video: $error"),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+        });
 
     _controller.addListener(() {
-      if (mounted) setState(() {});
+      if (mounted && !_isDragging) {
+        setState(() {});
+      }
     });
 
     _initBrightness();
@@ -484,106 +505,128 @@ class _VideoScreenState extends State<VideoScreen>
   }
 
   Widget _buildBottomBar(Size size) {
+    final position = _isDragging
+        ? Duration(seconds: _dragValue.toInt())
+        : _controller.value.position;
+    final duration = _controller.value.duration;
+
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeOutCubic,
-      bottom: _showControls ? 30 : -200,
-      left: 20,
-      right: 20,
+      bottom: _showControls ? 20 : -300,
+      left: 15,
+      right: 15,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(30),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.35),
+              color: Colors.black.withValues(alpha: 0.4),
               border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    Icon(
-                      _volume == 0
-                          ? Icons.volume_off_rounded
-                          : Icons.volume_up_rounded,
-                      color: Colors.blueAccent,
-                      size: 20,
+                // Progressive Custom Slider
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                      elevation: 4,
                     ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 2,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 6,
-                          ),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 14,
-                          ),
-                          activeTrackColor: Colors.blueAccent,
-                          inactiveTrackColor: Colors.white24,
-                          thumbColor: Colors.blueAccent,
-                        ),
-                        child: Slider(
-                          value: _volume,
-                          onChanged: (v) {
-                            setState(() {
-                              _volume = v;
-                              _controller.setVolume(v);
-                            });
-                          },
-                        ),
-                      ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 20,
                     ),
-                    _buildGlassButton(
-                      icon: Icons.speed_rounded,
-                      onPressed: _cycleSpeed,
+                    activeTrackColor: Colors.blueAccent,
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: Colors.white,
+                    trackShape: const RoundedRectSliderTrackShape(),
+                  ),
+                  child: Slider(
+                    value: position.inSeconds.toDouble().clamp(
+                      0,
+                      duration.inSeconds.toDouble(),
                     ),
-                    const SizedBox(width: 8),
-                    _buildGlassButton(
-                      icon: Icons.stop_rounded,
-                      onPressed: () {
-                        _controller.pause();
-                        _controller.seekTo(Duration.zero);
-                      },
-                      color: Colors.redAccent,
-                    ),
-                  ],
+                    max: duration.inSeconds.toDouble() > 0
+                        ? duration.inSeconds.toDouble()
+                        : 0,
+                    onChanged: (value) {
+                      setState(() {
+                        _isDragging = true;
+                        _dragValue = value;
+                      });
+                    },
+                    onChangeEnd: (value) {
+                      _controller.seekTo(Duration(seconds: value.toInt()));
+                      setState(() {
+                        _isDragging = false;
+                      });
+                    },
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 5),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      _formatDuration(_controller.value.position),
+                      _formatDuration(position),
                       style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
+                        color: Colors.white,
+                        fontSize: 13,
                         fontWeight: FontWeight.w500,
+                        fontFeatures: [FontFeature.tabularFigures()],
                       ),
                     ),
+                    Row(
+                      children: [
+                        _buildGlassButton(
+                          icon: Icons.speed_rounded,
+                          onPressed: _cycleSpeed,
+                        ),
+                        const SizedBox(width: 10),
+                        Icon(
+                          _volume == 0
+                              ? Icons.volume_off_rounded
+                              : Icons.volume_up_rounded,
+                          color: Colors.white70,
+                          size: 18,
+                        ),
+                        SizedBox(
+                          width: 80,
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 2,
+                              thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 5,
+                              ),
+                              activeTrackColor: Colors.blueAccent,
+                            ),
+                            child: Slider(
+                              value: _volume,
+                              onChanged: (v) {
+                                setState(() {
+                                  _volume = v;
+                                  _controller.setVolume(v);
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     Text(
-                      _formatDuration(_controller.value.duration),
+                      _formatDuration(duration),
                       style: const TextStyle(
                         color: Colors.white70,
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w500,
+                        fontFeatures: [FontFeature.tabularFigures()],
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 4),
-                VideoProgressIndicator(
-                  _controller,
-                  allowScrubbing: true,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  colors: const VideoProgressColors(
-                    playedColor: Colors.blueAccent,
-                    bufferedColor: Colors.white24,
-                    backgroundColor: Colors.white10,
-                  ),
                 ),
               ],
             ),
@@ -629,8 +672,13 @@ class _VideoScreenState extends State<VideoScreen>
 
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
+    final hours = duration.inHours;
     final minutes = twoDigits(duration.inMinutes.remainder(60));
     final seconds = twoDigits(duration.inSeconds.remainder(60));
+
+    if (hours > 0) {
+      return "$hours:$minutes:$seconds";
+    }
     return "$minutes:$seconds";
   }
 }
