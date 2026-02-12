@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:movies_app/homescreen.dart';
+
+import 'package:provider/provider.dart';
+import 'package:movies_app/services/media_provider.dart';
+import 'package:movies_app/screen/homescreen.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    MultiProvider(
+      providers: [ChangeNotifierProvider(create: (_) => MediaProvider())],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -13,8 +21,16 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Movies App',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const HomeScreen(),
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.red,
+        scaffoldBackgroundColor: Colors.black,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.red,
+          brightness: Brightness.dark,
+        ),
+      ),
+      home: HomeScreen(),
     );
   }
 }
