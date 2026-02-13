@@ -541,10 +541,9 @@ class _MediaExplorerState extends State<_MediaExplorer> {
   Widget build(BuildContext context) {
     return Consumer<MediaProvider>(
       builder: (context, provider, child) {
-        var baseList =
-            (widget.isFavoritesOnly ? provider.favorites : provider.mediaList)
-                .where((m) => m.category != 'Songs')
-                .toList();
+        var baseList = widget.isFavoritesOnly
+            ? provider.favorites
+            : provider.mediaList.where((m) => m.category != 'Songs').toList();
 
         // Filter list based on search query
         final list = baseList.where((m) {
@@ -732,13 +731,21 @@ class _MediaExplorerState extends State<_MediaExplorer> {
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => Padding(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final item = list[index];
+                    // For songs in favorites, we want a playlist of all favorite songs
+                    final songPlaylist = item.category == 'Songs'
+                        ? list.where((m) => m.category == 'Songs').toList()
+                        : null;
+
+                    return Padding(
                       padding: const EdgeInsets.only(bottom: 20),
-                      child: _LargeMediaCard(media: list[index]),
-                    ),
-                    childCount: list.length,
-                  ),
+                      child: _LargeMediaCard(
+                        media: item,
+                        playlist: songPlaylist,
+                      ),
+                    );
+                  }, childCount: list.length),
                 ),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 150)),
@@ -1166,23 +1173,40 @@ class _CompactMediaCard extends StatelessWidget {
 
 class _LargeMediaCard extends StatelessWidget {
   final MediaModel media;
-  const _LargeMediaCard({required this.media});
+  final List<MediaModel>? playlist;
+  const _LargeMediaCard({required this.media, this.playlist});
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<MediaProvider>(context, listen: false);
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => VideoScreen(
-            mediaId: media.id,
-            videoUrl: media.url,
-            title: media.title,
-          ),
-        ),
-      ),
+      onTap: () {
+        if (media.category == 'Songs') {
+          final currentPlaylist = playlist ?? [media];
+          final initialIndex = currentPlaylist.indexOf(media);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MusicPlayerScreen(
+                playlist: currentPlaylist,
+                initialIndex: initialIndex != -1 ? initialIndex : 0,
+              ),
+            ),
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => VideoScreen(
+                mediaId: media.id,
+                videoUrl: media.url,
+                title: media.title,
+              ),
+            ),
+          );
+        }
+      },
       child: Container(
         height: 220,
         decoration: BoxDecoration(
@@ -1199,7 +1223,20 @@ class _LargeMediaCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(25),
           child: Stack(
             children: [
-              Positioned.fill(child: VideoThumbnailWidget(videoUrl: media.url)),
+              Positioned.fill(
+                child: media.category == 'Songs'
+                    ? Container(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        child: const Center(
+                          child: Icon(
+                            Icons.music_note_rounded,
+                            color: Colors.redAccent,
+                            size: 80,
+                          ),
+                        ),
+                      )
+                    : VideoThumbnailWidget(videoUrl: media.url),
+              ),
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -1580,11 +1617,22 @@ class _DownloadsScreen extends StatelessWidget {
                                   ),
                                   onPressed: () {
                                     if (media.category == 'Songs') {
+                                      final songPlaylist = downloads
+                                          .where((m) => m.category == 'Songs')
+                                          .toList();
+                                      final initialIndex = songPlaylist.indexOf(
+                                        media,
+                                      );
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
                                           builder: (context) =>
-                                              MusicPlayerScreen(song: media),
+                                              MusicPlayerScreen(
+                                                playlist: songPlaylist,
+                                                initialIndex: initialIndex != -1
+                                                    ? initialIndex
+                                                    : 0,
+                                              ),
                                         ),
                                       );
                                     } else {

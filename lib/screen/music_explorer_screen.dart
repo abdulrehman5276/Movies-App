@@ -44,8 +44,11 @@ class _MusicExplorerScreenState extends State<MusicExplorerScreen> {
                   ),
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) =>
-                          _MusicListItem(song: filteredList[index]),
+                      (context, index) => _MusicListItem(
+                        song: filteredList[index],
+                        playlist: filteredList,
+                        index: index,
+                      ),
                       childCount: filteredList.length,
                     ),
                   ),
@@ -118,7 +121,14 @@ class _MusicExplorerScreenState extends State<MusicExplorerScreen> {
 
 class _MusicListItem extends StatelessWidget {
   final MediaModel song;
-  const _MusicListItem({required this.song});
+  final List<MediaModel> playlist;
+  final int index;
+
+  const _MusicListItem({
+    required this.song,
+    required this.playlist,
+    required this.index,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -180,7 +190,8 @@ class _MusicListItem extends StatelessWidget {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => MusicPlayerScreen(song: song),
+            builder: (context) =>
+                MusicPlayerScreen(playlist: playlist, initialIndex: index),
           ),
         ),
       ),

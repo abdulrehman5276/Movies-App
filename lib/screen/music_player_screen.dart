@@ -6,9 +6,17 @@ import '../models/media_model.dart';
 import '../services/media_provider.dart';
 import 'package:marquee/marquee.dart';
 
+enum RepeatMode { none, all, one }
+
 class MusicPlayerScreen extends StatefulWidget {
-  final MediaModel song;
-  const MusicPlayerScreen({super.key, required this.song});
+  final List<MediaModel> playlist;
+  final int initialIndex;
+
+  const MusicPlayerScreen({
+    super.key,
+    required this.playlist,
+    required this.initialIndex,
+  });
 
   @override
   State<MusicPlayerScreen> createState() => _MusicPlayerScreenState();
@@ -20,9 +28,17 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
+  // New features state
+  late List<MediaModel> _playlist;
+  late int _currentIndex;
+  bool _isShuffle = false;
+  RepeatMode _repeatMode = RepeatMode.none;
+
   @override
   void initState() {
     super.initState();
+    _playlist = List.from(widget.playlist);
+    _currentIndex = widget.initialIndex;
     _audioPlayer = AudioPlayer();
     _setupAudio();
   }
@@ -41,8 +57,22 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
       if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
     });
 
+    _audioPlayer.onPlayerComplete.listen((event) {
+      if (_repeatMode == RepeatMode.one) {
+        _playCurrent();
+      } else {
+        _next();
+      }
+    });
+
+    _playCurrent();
+  }
+
+  Future<void> _playCurrent() async {
+    final song = _playlist[_currentIndex];
     try {
-      await _audioPlayer.setSourceUrl(widget.song.url);
+      await _audioPlayer.stop();
+      await _audioPlayer.setSourceUrl(song.url);
       await _audioPlayer.resume();
 
       Future.delayed(const Duration(seconds: 1), () async {
@@ -52,8 +82,55 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         }
       });
     } catch (e) {
-      debugPrint("Error setting up audio: $e");
+      debugPrint("Error playing audio: $e");
     }
+  }
+
+  void _next() {
+    setState(() {
+      if (_isShuffle) {
+        _currentIndex = (_currentIndex + 1) % _playlist.length;
+      } else {
+        if (_currentIndex < _playlist.length - 1) {
+          _currentIndex++;
+        } else if (_repeatMode == RepeatMode.all) {
+          _currentIndex = 0;
+        }
+      }
+    });
+    _playCurrent();
+  }
+
+  void _previous() {
+    setState(() {
+      if (_currentIndex > 0) {
+        _currentIndex--;
+      } else if (_repeatMode == RepeatMode.all) {
+        _currentIndex = _playlist.length - 1;
+      }
+    });
+    _playCurrent();
+  }
+
+  void _toggleShuffle() {
+    setState(() {
+      _isShuffle = !_isShuffle;
+      if (_isShuffle) {
+        _playlist.shuffle();
+      } else {
+        _playlist = List.from(widget.playlist);
+        _currentIndex = _playlist.indexOf(
+          widget.playlist[widget.initialIndex],
+        ); // This is simplified
+      }
+    });
+  }
+
+  void _toggleRepeat() {
+    setState(() {
+      _repeatMode =
+          RepeatMode.values[(_repeatMode.index + 1) % RepeatMode.values.length];
+    });
   }
 
   @override
@@ -74,6 +151,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
+    final currentSong = _playlist[_currentIndex];
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -86,13 +165,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         actions: [
           IconButton(
             icon: Icon(
-              widget.song.isFavorite
+              currentSong.isFavorite
                   ? Icons.favorite_rounded
                   : Icons.favorite_border_rounded,
-              color: widget.song.isFavorite ? Colors.redAccent : Colors.white,
+              color: currentSong.isFavorite ? Colors.redAccent : Colors.white,
             ),
             onPressed: () {
-              context.read<MediaProvider>().toggleFavorite(widget.song.id);
+              context.read<MediaProvider>().toggleFavorite(currentSong.id);
             },
           ),
         ],
@@ -138,7 +217,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   SizedBox(
                     height: 40,
                     child: Marquee(
-                      text: widget.song.title,
+                      key: ValueKey(currentSong.id),
+                      text: currentSong.title,
                       style: GoogleFonts.outfit(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -157,7 +237,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    widget.song.category ?? 'Song',
+                    currentSong.category ?? 'Song',
                     style: GoogleFonts.outfit(
                       fontSize: 16,
                       color: Colors.white54,
@@ -230,15 +310,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.shuffle_rounded,
-                      color: Colors.white54,
+                      color: _isShuffle ? Colors.redAccent : Colors.white54,
                     ),
-                    onPressed: () {},
+                    onPressed: _toggleShuffle,
                   ),
                   IconButton(
                     icon: const Icon(Icons.skip_previous_rounded, size: 45),
-                    onPressed: () {},
+                    onPressed: _previous,
                   ),
                   GestureDetector(
                     onTap: () {
@@ -265,14 +345,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.skip_next_rounded, size: 45),
-                    onPressed: () {},
+                    onPressed: _next,
                   ),
                   IconButton(
-                    icon: const Icon(
-                      Icons.repeat_rounded,
-                      color: Colors.white54,
+                    icon: Icon(
+                      _repeatMode == RepeatMode.one
+                          ? Icons.repeat_one_rounded
+                          : Icons.repeat_rounded,
+                      color: _repeatMode != RepeatMode.none
+                          ? Colors.redAccent
+                          : Colors.white54,
                     ),
-                    onPressed: () {},
+                    onPressed: _toggleRepeat,
                   ),
                 ],
               ),
