@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/media_model.dart';
 import '../services/media_provider.dart';
 import 'music_player_screen.dart';
+import 'package:movies_app/services/auth_service.dart';
 
 class MusicExplorerScreen extends StatefulWidget {
   const MusicExplorerScreen({super.key});
@@ -194,7 +195,96 @@ class _MusicListItem extends StatelessWidget {
                 MusicPlayerScreen(playlist: playlist, initialIndex: index),
           ),
         ),
+        onLongPress: () {
+          if (AuthService().currentUser?.email == 'abdulrehmanpk79@gmail.com') {
+            _showDeleteConfirmation(context);
+          }
+        },
       ),
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final provider = context.read<MediaProvider>();
+            return AlertDialog(
+              backgroundColor: Colors.grey[900],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Text(
+                isDeleting ? 'Deleting Song...' : 'Delete Song?',
+                style: GoogleFonts.outfit(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isDeleting)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: CircularProgressIndicator(color: Colors.redAccent),
+                    )
+                  else
+                    Text(
+                      'This will permanently remove "${song.title}" from the server. Are you sure?',
+                      style: GoogleFonts.outfit(color: Colors.white70),
+                    ),
+                ],
+              ),
+              actions: isDeleting
+                  ? []
+                  : [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx),
+                        child: const Text(
+                          'CANCEL',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          setDialogState(() => isDeleting = true);
+                          try {
+                            await provider.deleteMedia(song);
+                            if (dialogCtx.mounted) {
+                              Navigator.pop(dialogCtx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Song deleted from server'),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (dialogCtx.mounted) {
+                              setDialogState(() => isDeleting = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Delete failed: $e'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                        ),
+                        child: const Text(
+                          'DELETE',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -1,7 +1,7 @@
 import 'package:minio_new/minio.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
-import 'dart:typed_data';
+
 import 'package:movies_app/config/app_config.dart';
 import 'package:flutter/foundation.dart';
 
