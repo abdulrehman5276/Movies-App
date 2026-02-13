@@ -7,10 +7,12 @@ import '../models/media_model.dart';
 import 'videoscreen.dart';
 import 'add_media_screen.dart';
 import '../components/video_thumbnail_widget.dart';
-
 import 'package:movies_app/services/auth_service.dart';
 import 'package:movies_app/screen/login_page.dart';
 import 'package:movies_app/config/app_config.dart';
+import 'music_explorer_screen.dart';
+import 'add_music_screen.dart';
+import 'music_player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -50,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           children: [
             const _MediaExplorer(isFavoritesOnly: false),
+            const MusicExplorerScreen(),
             const _MediaExplorer(isFavoritesOnly: true),
             const _DownloadsScreen(),
             _buildProfileScreen(context),
@@ -64,7 +67,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const AddMediaScreen(),
+                      builder: (context) => _selectedIndex == 1
+                          ? const AddMusicScreen()
+                          : const AddMediaScreen(),
                     ),
                   ),
                   backgroundColor: Colors.redAccent,
@@ -73,8 +78,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Icon(
-                    Icons.add_rounded,
+                  child: Icon(
+                    _selectedIndex == 1
+                        ? Icons.music_note_rounded
+                        : Icons.add_rounded,
                     color: Colors.white,
                     size: 32,
                   ),
@@ -114,9 +121,10 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _buildNavItem(0, Icons.home_rounded, 'Home'),
-                _buildNavItem(1, Icons.favorite_rounded, 'Favorites'),
-                _buildNavItem(2, Icons.download_done_rounded, 'Downloads'),
-                _buildNavItem(3, Icons.person_rounded, 'Profile'),
+                _buildNavItem(1, Icons.audiotrack_rounded, 'Music'),
+                _buildNavItem(2, Icons.favorite_rounded, 'Favorites'),
+                _buildNavItem(3, Icons.download_done_rounded, 'Downloads'),
+                _buildNavItem(4, Icons.person_rounded, 'Profile'),
               ],
             ),
           ),
@@ -533,9 +541,10 @@ class _MediaExplorerState extends State<_MediaExplorer> {
   Widget build(BuildContext context) {
     return Consumer<MediaProvider>(
       builder: (context, provider, child) {
-        var baseList = widget.isFavoritesOnly
-            ? provider.favorites
-            : provider.mediaList;
+        var baseList =
+            (widget.isFavoritesOnly ? provider.favorites : provider.mediaList)
+                .where((m) => m.category != 'Songs')
+                .toList();
 
         // Filter list based on search query
         final list = baseList.where((m) {
@@ -1569,16 +1578,28 @@ class _DownloadsScreen extends StatelessWidget {
                                     color: Colors.white,
                                     size: 32,
                                   ),
-                                  onPressed: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => VideoScreen(
-                                        mediaId: media.id,
-                                        videoUrl: media.url,
-                                        title: media.title,
-                                      ),
-                                    ),
-                                  ),
+                                  onPressed: () {
+                                    if (media.category == 'Songs') {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              MusicPlayerScreen(song: media),
+                                        ),
+                                      );
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => VideoScreen(
+                                            mediaId: media.id,
+                                            videoUrl: media.url,
+                                            title: media.title,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
                                 ),
                               ],
                             ),

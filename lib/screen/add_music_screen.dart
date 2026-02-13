@@ -8,19 +8,17 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
-import '../components/video_thumbnail_widget.dart';
 
-class AddMediaScreen extends StatefulWidget {
-  const AddMediaScreen({super.key});
+class AddMusicScreen extends StatefulWidget {
+  const AddMusicScreen({super.key});
 
   @override
-  State<AddMediaScreen> createState() => _AddMediaScreenState();
+  State<AddMusicScreen> createState() => _AddMusicScreenState();
 }
 
-class _AddMediaScreenState extends State<AddMediaScreen> {
+class _AddMusicScreenState extends State<AddMusicScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
-  final _urlController = TextEditingController();
   final _descriptionController = TextEditingController();
   List<File> _selectedFiles = [];
   Map<int, String> _customTitles = {};
@@ -31,11 +29,11 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
   String _uploadStatus = "";
   final MinioService _minioService = MinioService();
 
-  Future<void> _pickVideo() async {
+  Future<void> _pickMusic() async {
     if (_isPickingFile || _isUploading) return;
 
     if (Platform.isAndroid || Platform.isIOS) {
-      if (await Permission.videos.request().isGranted ||
+      if (await Permission.audio.request().isGranted ||
           await Permission.storage.request().isGranted) {
         _executePicker();
       } else {
@@ -56,8 +54,7 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
 
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['mp4', 'mov', 'mkv'],
+        type: FileType.audio,
         allowMultiple: true,
       );
 
@@ -81,87 +78,69 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
     }
   }
 
-  MediaModel _createMediaModel(
-    String url,
-    String title,
-    String pathToCheck,
-    int index,
-  ) {
-    String detectedCategory = 'Media';
-    final extension = p.extension(pathToCheck).toLowerCase();
-
-    if (['.mp4', '.mov', '.mkv'].contains(extension)) {
-      detectedCategory = 'Movies';
-    }
-
-    return MediaModel(
-      id: '${DateTime.now().millisecondsSinceEpoch}_$index',
-      title: title,
-      url: url,
-      description: _descriptionController.text,
-      category: detectedCategory,
-    );
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_selectedFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select music files')),
+      );
+      return;
+    }
 
     setState(() => _isUploading = true);
     final provider = Provider.of<MediaProvider>(context, listen: false);
 
     try {
-      if (_selectedFiles.isNotEmpty) {
-        final totalSize = _selectedFiles.fold<int>(
-          0,
-          (sum, file) => sum + file.lengthSync(),
-        );
-        int totalUploadedSoFar = 0;
+      final totalSize = _selectedFiles.fold<int>(
+        0,
+        (sum, file) => sum + file.lengthSync(),
+      );
+      int totalUploadedSoFar = 0;
 
-        for (int i = 0; i < _selectedFiles.length; i++) {
-          final file = _selectedFiles[i];
-          final fileName = p.basename(file.path);
+      for (int i = 0; i < _selectedFiles.length; i++) {
+        final file = _selectedFiles[i];
+        final fileName = p.basename(file.path);
 
-          if (mounted) {
-            setState(() {
-              _uploadStatus =
-                  "Uploading $fileName (${i + 1}/${_selectedFiles.length})";
-            });
-          }
-
-          DateTime lastUpdate = DateTime.now();
-          final url = await _minioService.uploadVideo(
-            file,
-            onProgress: (p) {
-              final now = DateTime.now();
-              if (now.difference(lastUpdate).inMilliseconds > 100 || p == 1.0) {
-                lastUpdate = now;
-                if (mounted) {
-                  setState(() {
-                    final currentFileProgress = (p * file.lengthSync()).toInt();
-                    _uploadProgress =
-                        (totalUploadedSoFar + currentFileProgress) / totalSize;
-                  });
-                }
-              }
-            },
-          );
-
-          totalUploadedSoFar += file.lengthSync();
-
-          final title =
-              _selectedFiles.length == 1 && _titleController.text.isNotEmpty
-              ? _titleController.text
-              : (_customTitles[i] ?? p.basenameWithoutExtension(file.path));
-
-          provider.addMedia(_createMediaModel(url, title, file.path, i));
+        if (mounted) {
+          setState(() {
+            _uploadStatus =
+                "Uploading $fileName (${i + 1}/${_selectedFiles.length})";
+          });
         }
-      } else {
+
+        DateTime lastUpdate = DateTime.now();
+        final url = await _minioService.uploadVideo(
+          // Reusing uploadVideo as it handles generic putObject
+          file,
+          onProgress: (p) {
+            final now = DateTime.now();
+            if (now.difference(lastUpdate).inMilliseconds > 100 || p == 1.0) {
+              lastUpdate = now;
+              if (mounted) {
+                setState(() {
+                  final currentFileProgress = (p * file.lengthSync()).toInt();
+                  _uploadProgress =
+                      (totalUploadedSoFar + currentFileProgress) / totalSize;
+                });
+              }
+            }
+          },
+        );
+
+        totalUploadedSoFar += file.lengthSync();
+
+        final title =
+            _selectedFiles.length == 1 && _titleController.text.isNotEmpty
+            ? _titleController.text
+            : (_customTitles[i] ?? p.basenameWithoutExtension(file.path));
+
         provider.addMedia(
-          _createMediaModel(
-            _urlController.text,
-            _titleController.text,
-            _urlController.text,
-            0,
+          MediaModel(
+            id: '${DateTime.now().millisecondsSinceEpoch}_$i',
+            title: title,
+            url: url,
+            description: _descriptionController.text,
+            category: 'Songs',
           ),
         );
       }
@@ -186,11 +165,10 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
     return SafeArea(
       child: Scaffold(
         appBar: AppBar(
-          title: Text('Add New Media', style: GoogleFonts.outfit()),
+          title: Text('Add New Music', style: GoogleFonts.outfit()),
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
-
         body: Stack(
           children: [
             SingleChildScrollView(
@@ -201,7 +179,7 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Media Details',
+                      'Music Details',
                       style: GoogleFonts.outfit(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -210,7 +188,7 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                     ),
                     const SizedBox(height: 30),
                     GestureDetector(
-                      onTap: _pickVideo,
+                      onTap: _pickMusic,
                       child: Container(
                         height: 150,
                         width: double.infinity,
@@ -230,33 +208,18 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                       ),
                     ),
                     if (_selectedFiles.isNotEmpty) _buildSelectedFilesList(),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 20),
                     _buildTextField(
                       controller: _titleController,
-                      label: 'Title',
+                      label: 'Album/Playlist Name',
                       hint: 'Enter title (optional for multiple)',
-                      icon: Icons.title,
-                      validator: (v) =>
-                          (_selectedFiles.length <= 1 && v!.isEmpty)
-                          ? 'Enter a title'
-                          : null,
+                      icon: Icons.library_music_rounded,
                     ),
-                    const SizedBox(height: 20),
-                    if (_selectedFiles.isEmpty)
-                      _buildTextField(
-                        controller: _urlController,
-                        label: 'Or Video URL',
-                        hint: 'https://example.com/video.mp4',
-                        icon: Icons.link,
-                        validator: (v) => (_selectedFiles.isEmpty && v!.isEmpty)
-                            ? 'Enter URL or pick files'
-                            : null,
-                      ),
                     const SizedBox(height: 20),
                     _buildTextField(
                       controller: _descriptionController,
                       label: 'Description',
-                      hint: 'Short description...',
+                      hint: 'Artist or Album details...',
                       icon: Icons.description,
                       maxLines: 3,
                     ),
@@ -291,16 +254,16 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
       children: [
         Icon(
           _selectedFiles.isNotEmpty
-              ? Icons.video_library
-              : Icons.cloud_upload_outlined,
+              ? Icons.audiotrack_rounded
+              : Icons.music_note_rounded,
           size: 50,
           color: _selectedFiles.isNotEmpty ? Colors.redAccent : Colors.grey,
         ),
         const SizedBox(height: 10),
         Text(
           _selectedFiles.isNotEmpty
-              ? '${_selectedFiles.length} Files Selected'
-              : 'Tap to pick media (Multiple)',
+              ? '${_selectedFiles.length} Music Files Selected'
+              : 'Tap to pick Music (Multiple)',
           style: GoogleFonts.outfit(
             color: _selectedFiles.isNotEmpty ? Colors.white : Colors.grey,
           ),
@@ -318,9 +281,6 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
         itemCount: _selectedFiles.length,
         itemBuilder: (context, index) {
           final file = _selectedFiles[index];
-          final extension = p.extension(file.path).toLowerCase();
-          final isVideo = ['.mp4', '.mov', '.mkv'].contains(extension);
-
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(12),
@@ -333,19 +293,16 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
               children: [
                 Row(
                   children: [
-                    // Thumbnail / Icon
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        width: 80,
-                        height: 50,
-                        color: Colors.black26,
-                        child: isVideo
-                            ? VideoThumbnailWidget(videoUrl: file.path)
-                            : const Icon(
-                                Icons.audiotrack_rounded,
-                                color: Colors.redAccent,
-                              ),
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.music_note_rounded,
+                        color: Colors.redAccent,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -382,27 +339,17 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                       onPressed: () => setState(() {
                         _selectedFiles.removeAt(index);
                         _customTitles.remove(index);
-                        // Re-map titles
-                        final newTitles = <int, String>{};
-                        _customTitles.forEach((key, value) {
-                          if (key > index)
-                            newTitles[key - 1] = value;
-                          else if (key < index)
-                            newTitles[key] = value;
-                        });
-                        _customTitles = newTitles;
                       }),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Individual Title Edit
                 TextField(
                   onChanged: (val) => _customTitles[index] = val,
                   style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
                   decoration: InputDecoration(
                     isDense: true,
-                    hintText: 'Custom title for this file...',
+                    hintText: 'Song Title...',
                     hintStyle: const TextStyle(color: Colors.white24),
                     filled: true,
                     fillColor: Colors.black26,
@@ -410,16 +357,8 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide.none,
                     ),
-                    prefixIcon: const Icon(
-                      Icons.edit_rounded,
-                      size: 16,
-                      color: Colors.white38,
-                    ),
                   ),
-                  controller: TextEditingController(text: _customTitles[index])
-                    ..selection = TextSelection.fromPosition(
-                      TextPosition(offset: (_customTitles[index] ?? "").length),
-                    ),
+                  controller: TextEditingController(text: _customTitles[index]),
                 ),
               ],
             ),
@@ -430,28 +369,23 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
   }
 
   Widget _buildSubmitButton() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 30),
-        child: SizedBox(
-          width: double.infinity,
-          height: 55,
-          child: ElevatedButton(
-            onPressed: _isUploading ? null : _submit,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-            ),
-            child: Text(
-              'Save & Upload',
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: ElevatedButton(
+        onPressed: _isUploading ? null : _submit,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.redAccent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+        child: Text(
+          'Upload Music',
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
           ),
         ),
       ),
@@ -505,18 +439,15 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
     required String hint,
     required IconData icon,
     int maxLines = 1,
-    String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
-      validator: validator,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         labelStyle: const TextStyle(color: Colors.grey),
-        hintStyle: const TextStyle(color: Colors.white24),
         prefixIcon: Icon(icon, color: Colors.redAccent),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
         enabledBorder: OutlineInputBorder(

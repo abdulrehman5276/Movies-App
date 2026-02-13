@@ -18,7 +18,9 @@ class MediaProvider with ChangeNotifier {
     sortedList.sort((a, b) {
       final dateA = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final dateB = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return dateB.compareTo(dateA); // Newest first
+      final cmp = dateB.compareTo(dateA);
+      if (cmp != 0) return cmp;
+      return b.id.compareTo(a.id); // Fallback to ID for stable sort
     });
     return sortedList;
   }
@@ -144,14 +146,18 @@ class MediaProvider with ChangeNotifier {
   Future<void> syncWithServer() async {
     final minioService = MinioService();
     try {
-      final serverFiles = await minioService.listAllFiles();
+      final serverFileData = await minioService.listAllFilesWithMetadata();
+      final serverFileNames = serverFileData
+          .map((f) => f['name'] as String)
+          .toSet();
       bool changed = false;
 
+      // 1. Remove local entries that are no longer on the server
       _mediaList.removeWhere((item) {
-        if (item.url.contains(AppConfig.minioIp)) {
+        if (item.url.contains('/${AppConfig.bucket}/')) {
           final uri = Uri.parse(item.url);
           final fileName = Uri.decodeComponent(p.basename(uri.path));
-          if (!serverFiles.contains(fileName)) {
+          if (!serverFileNames.contains(fileName)) {
             changed = true;
             return true;
           }
@@ -159,8 +165,12 @@ class MediaProvider with ChangeNotifier {
         return false;
       });
 
+      // 2. Add new files from server with their actual server timestamp
       final baseUrl = AppConfig.baseUrl;
-      for (final fileName in serverFiles) {
+      for (final fileInfo in serverFileData) {
+        final fileName = fileInfo['name'] as String;
+        final lastModified = fileInfo['lastModified'] as DateTime?;
+
         final encodedName = Uri.encodeComponent(fileName);
         final expectedUrl = '$baseUrl/${AppConfig.bucket}/$encodedName';
 
@@ -171,7 +181,6 @@ class MediaProvider with ChangeNotifier {
         );
 
         if (!alreadyExists) {
-          // Detect category
           String category = 'Media';
           final ext = p.extension(fileName).toLowerCase();
           if (['.mp3', '.wav', '.m4a'].contains(ext)) {
@@ -182,11 +191,14 @@ class MediaProvider with ChangeNotifier {
 
           _mediaList.add(
             MediaModel(
-              id: DateTime.now().millisecondsSinceEpoch.toString() + fileName,
+              id:
+                  (lastModified?.millisecondsSinceEpoch.toString() ??
+                      DateTime.now().millisecondsSinceEpoch.toString()) +
+                  fileName,
               title: p.basenameWithoutExtension(fileName),
               url: expectedUrl,
               category: category,
-              createdAt: DateTime.now(),
+              createdAt: lastModified ?? DateTime.now(),
             ),
           );
           changed = true;
