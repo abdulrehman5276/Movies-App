@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/media_provider.dart';
 
 class VideoScreen extends StatefulWidget {
@@ -42,41 +44,58 @@ class _VideoScreenState extends State<VideoScreen> {
     });
   }
 
-  void _initializeVideo() {
+  Future<void> _initializeVideo() async {
     String url = widget.videoUrl;
+    Map<String, String> headers = widget.httpHeaders ?? {};
 
-    // Redirect local/localhost for Android Emulator
-    if (url.contains('127.0.0.1')) {
-      url = url.replaceAll('127.0.0.1', '10.0.2.2');
-    } else if (url.contains('localhost')) {
-      url = url.replaceAll('localhost', '10.0.2.2');
+    try {
+      // 1. Check if the file is downloaded locally
+      final dir = await getApplicationDocumentsDirectory();
+      // Filename is stored as media.title in MediaProvider.downloadMedia
+      final localFile = File("${dir.path}/${widget.title}");
+
+      if (await localFile.exists()) {
+        print("Playing local file: ${localFile.path}");
+        _controller = VideoPlayerController.file(localFile);
+      } else {
+        // 2. Network Playback with optimizations
+        // Redirect local/localhost for Android Emulator
+        if (url.contains('127.0.0.1')) {
+          url = url.replaceAll('127.0.0.1', '10.0.2.2');
+        } else if (url.contains('localhost')) {
+          url = url.replaceAll('localhost', '10.0.2.2');
+        }
+
+        // Add Ngrok bypass header if it's an ngrok URL
+        if (url.contains('ngrok-free.dev') || url.contains('ngrok.io')) {
+          headers['ngrok-skip-browser-warning'] = 'true';
+        }
+
+        _controller = VideoPlayerController.networkUrl(
+          Uri.parse(url),
+          httpHeaders: headers,
+        );
+      }
+
+      await _controller.initialize();
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+          _errorMessage = null;
+        });
+        _controller.play();
+        _controller.setLooping(true);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              "Playback Error\n\nEnsure you have a stable connection.\n\n$error";
+          _isInitialized = false;
+        });
+      }
     }
-
-    _controller =
-        VideoPlayerController.networkUrl(
-            Uri.parse(url),
-            httpHeaders: widget.httpHeaders ?? {},
-          )
-          ..initialize()
-              .then((_) {
-                if (mounted) {
-                  setState(() {
-                    _isInitialized = true;
-                    _errorMessage = null;
-                  });
-                  _controller.play();
-                  _controller.setLooping(true);
-                }
-              })
-              .catchError((error) {
-                if (mounted) {
-                  setState(() {
-                    _errorMessage =
-                        "Playback Error\n\nEnsure this is a direct video link.\n\n$error";
-                    _isInitialized = false;
-                  });
-                }
-              });
   }
 
   @override
@@ -208,6 +227,7 @@ class _VideoScreenState extends State<VideoScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.8),
+
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
@@ -218,22 +238,19 @@ class _VideoScreenState extends State<VideoScreen> {
             builder: (context, VideoPlayerValue value, child) {
               return Column(
                 children: [
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: Colors.redAccent,
-                      thumbColor: Colors.redAccent,
-                      trackHeight: 4,
-                    ),
-                    child: Slider(
-                      value: value.position.inSeconds.toDouble().clamp(
-                        0,
-                        value.duration.inSeconds.toDouble(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    child: VideoProgressIndicator(
+                      _controller,
+                      allowScrubbing: true,
+                      colors: VideoProgressColors(
+                        playedColor: Colors.redAccent,
+                        bufferedColor: Colors.white24,
+                        backgroundColor: Colors.white10,
                       ),
-                      max: value.duration.inSeconds.toDouble(),
-                      onChanged: (val) =>
-                          _controller.seekTo(Duration(seconds: val.toInt())),
                     ),
                   ),
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [

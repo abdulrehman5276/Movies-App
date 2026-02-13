@@ -119,37 +119,41 @@ class _AddMediaScreenState extends State<AddMediaScreen> {
           0,
           (sum, file) => sum + file.lengthSync(),
         );
-        final Map<int, int> uploadedBytesMap = {};
+        int totalUploadedSoFar = 0;
 
-        await Future.wait(
-          _selectedFiles.asMap().entries.map((entry) async {
-            final i = entry.key;
-            final file = entry.value;
+        for (int i = 0; i < _selectedFiles.length; i++) {
+          final file = _selectedFiles[i];
+          final fileName = p.basename(file.path);
 
-            final url = await _minioService.uploadVideo(
-              file,
-              onProgress: (p) {
-                if (mounted) {
-                  setState(() {
-                    uploadedBytesMap[i] = (p * file.lengthSync()).toInt();
-                    final currentTotalUploaded = uploadedBytesMap.values
-                        .fold<int>(0, (a, b) => a + b);
-                    _uploadProgress = currentTotalUploaded / totalSize;
-                    _uploadStatus =
-                        "Uploading ${_selectedFiles.length} files please wait ";
-                  });
-                }
-              },
-            );
+          if (mounted) {
+            setState(() {
+              _uploadStatus =
+                  "Uploading $fileName (${i + 1}/${_selectedFiles.length})";
+            });
+          }
 
-            final title =
-                _selectedFiles.length == 1 && _titleController.text.isNotEmpty
-                ? _titleController.text
-                : (_customTitles[i] ?? p.basenameWithoutExtension(file.path));
+          final url = await _minioService.uploadVideo(
+            file,
+            onProgress: (p) {
+              if (mounted) {
+                setState(() {
+                  final currentFileProgress = (p * file.lengthSync()).toInt();
+                  _uploadProgress =
+                      (totalUploadedSoFar + currentFileProgress) / totalSize;
+                });
+              }
+            },
+          );
 
-            provider.addMedia(_createMediaModel(url, title, file.path, i));
-          }),
-        );
+          totalUploadedSoFar += file.lengthSync();
+
+          final title =
+              _selectedFiles.length == 1 && _titleController.text.isNotEmpty
+              ? _titleController.text
+              : (_customTitles[i] ?? p.basenameWithoutExtension(file.path));
+
+          provider.addMedia(_createMediaModel(url, title, file.path, i));
+        }
       } else {
         provider.addMedia(
           _createMediaModel(

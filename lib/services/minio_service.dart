@@ -8,12 +8,19 @@ class MinioService {
   late Minio _minio;
 
   MinioService() {
+    print(
+      "Initializing MinioService with Endpoint: ${AppConfig.minioIp}, Port: ${AppConfig.minioPort}, SSL: ${AppConfig.useSSL}",
+    );
     _minio = Minio(
       endPoint: AppConfig.minioIp,
-      port: AppConfig.minioPort,
+      // Some proxies like Ngrok work better when port is omitted for standard 443
+      port: (AppConfig.minioPort == 443 || AppConfig.minioPort == 80)
+          ? null
+          : AppConfig.minioPort,
       useSSL: AppConfig.useSSL,
       accessKey: 'minioadmin',
       secretKey: 'minioadmin',
+      region: 'us-east-1',
     );
   }
 
@@ -24,33 +31,53 @@ class MinioService {
     final String fileName = p.basename(file.path);
     final int fileSize = await file.length();
 
-    // 1. Ensure bucket exists
-    bool exists = await _minio.bucketExists(AppConfig.bucket);
-    if (!exists) {
-      await _minio.makeBucket(AppConfig.bucket);
+    print("Uploading: $fileName ($fileSize bytes)");
+
+    try {
+      // 1. Ensure bucket exists
+      print("Checking bucket: ${AppConfig.bucket}");
+      bool exists = await _minio.bucketExists(AppConfig.bucket);
+      if (!exists) {
+        print("Creating bucket: ${AppConfig.bucket}");
+        await _minio.makeBucket(AppConfig.bucket);
+      }
+
+      // 2. Upload file
+      print("Starting PutObject...");
+      final stream = file.openRead().cast<Uint8List>();
+      await _minio.putObject(
+        AppConfig.bucket,
+        fileName,
+        stream,
+        size: fileSize,
+        onProgress: (bytes) {
+          if (onProgress != null) {
+            onProgress(bytes / fileSize);
+          }
+        },
+      );
+
+      print("Upload complete: $fileName");
+      // 3. Return the public URL
+      final encodedFileName = Uri.encodeComponent(fileName);
+      return '${AppConfig.baseUrl}/${AppConfig.bucket}/$encodedFileName';
+    } catch (e, stack) {
+      print("FATAL UPLOAD ERROR: $e");
+      print(stack);
+      rethrow;
     }
-
-    // 2. Upload file
-    final stream = file.openRead().cast<Uint8List>();
-    await _minio.putObject(
-      AppConfig.bucket,
-      fileName,
-      stream,
-      size: fileSize,
-      onProgress: (bytes) {
-        if (onProgress != null) {
-          onProgress(bytes / fileSize);
-        }
-      },
-    );
-
-    // 3. Return the public URL
-    final encodedFileName = Uri.encodeComponent(fileName);
-    return '${AppConfig.baseUrl}/${AppConfig.bucket}/$encodedFileName';
   }
 
   Future<void> deleteMedia(String fileName) async {
-    await _minio.removeObject(AppConfig.bucket, fileName);
+    try {
+      print("MinioService: Deleting $fileName from ${AppConfig.bucket}");
+      await _minio.removeObject(AppConfig.bucket, fileName);
+      print("MinioService: Deleted successfully");
+    } catch (e, stack) {
+      print("FATAL DELETE ERROR: $e");
+      print(stack);
+      rethrow;
+    }
   }
 
   Future<bool> checkIfFileExists(String fileName) async {

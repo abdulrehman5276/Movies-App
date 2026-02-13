@@ -1,23 +1,61 @@
+import 'package:http/http.dart' as http;
+
 class AppConfig {
-  // To make it work from any internet:
-  // 1. If using local MinIO, use a service like Ngrok: 'ngrok http 9000'
-  // 2. Or use your public IP if you have port forwarding enabled.
-  // 3. Or use a cloud storage provider.
+  static const String localIp = '192.168.1.2'; // Your server's local IP
+  static const String globalIp = 'elwanda-suberect-isabela.ngrok-free.dev';
 
-  // Example for local network: '192.168.1.2'
-  // Example for Ngrok: 'your-ngrok-id.ngrok-free.app' (remove http:// and port if using ngrok's default)
+  static String _activeIp = globalIp;
+  static bool _useSSL = true;
+  static int _activePort = 443;
 
-  static const String minioIp = 'elwanda-suberect-isabela.ngrok-free.dev';
-  static const int minioPort = 443;
-  static const bool useSSL = true;
   static const String bucket = 'movies';
 
-  static String get minioEndpoint => minioIp;
+  static String get minioIp => _activeIp;
+  static int get minioPort => _activePort;
+  static bool get useSSL => _useSSL;
 
-  // Helper to get the full base URL (handles SSL and standard ports)
+  static String get minioEndpoint => _activeIp;
+
   static String get baseUrl {
-    final scheme = useSSL ? 'https' : 'http';
-    final portPart = (minioPort == 80 || minioPort == 443) ? '' : ':$minioPort';
-    return '$scheme://$minioIp$portPart';
+    final scheme = _useSSL ? 'https' : 'http';
+    final portPart = (_activePort == 80 || _activePort == 443)
+        ? ''
+        : ':$_activePort';
+    return '$scheme://$_activeIp$portPart';
+  }
+
+  /// Checks if the local server is reachable.
+  /// If reachable, use local IP for better speed.
+  /// Otherwise, fallback to Ngrok for global access.
+  static Future<void> checkConnection() async {
+    print("--- Connection Check Started ---");
+    try {
+      final localUrl = 'http://$localIp:9000/minio/health/live';
+      print("Testing Local: $localUrl");
+
+      final response = await http
+          .get(Uri.parse(localUrl))
+          .timeout(const Duration(seconds: 2));
+
+      if (response.statusCode == 200) {
+        _activeIp = localIp;
+        _activePort = 9000;
+        _useSSL = false;
+        print("RESULT: Local Connection SUCCESS. IP: $_activeIp");
+      } else {
+        _useSSL = true;
+        _activeIp = globalIp;
+        _activePort = 443;
+        print(
+          "RESULT: Local Connection FAILED (Status ${response.statusCode}). Using Global: $_activeIp",
+        );
+      }
+    } catch (e) {
+      _useSSL = true;
+      _activeIp = globalIp;
+      _activePort = 443;
+      print("RESULT: Local Connection ERROR ($e). Using Global: $_activeIp");
+    }
+    print("--- Connection Check Finished ---");
   }
 }

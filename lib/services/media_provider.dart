@@ -36,6 +36,43 @@ class MediaProvider with ChangeNotifier {
     loadMedia();
   }
 
+  void _updateUrlsWithCurrentConfig() {
+    final baseUrl = AppConfig.baseUrl;
+    final localIp = AppConfig.localIp;
+    final globalIp = AppConfig.globalIp;
+
+    bool changed = false;
+    for (int i = 0; i < _mediaList.length; i++) {
+      final media = _mediaList[i];
+      // If the URL contains either local or global IP, and it's not the current baseUrl
+      if ((media.url.contains(localIp) || media.url.contains(globalIp)) &&
+          !media.url.contains(baseUrl)) {
+        // Replace the origin part (protocol + host + port) with the current baseUrl
+        final newUrl = media.url.replaceFirst(
+          RegExp(r'^https?://[^/]+'),
+          baseUrl,
+        );
+
+        if (newUrl != media.url) {
+          _mediaList[i] = MediaModel(
+            id: media.id,
+            title: media.title,
+            url: newUrl,
+            description: media.description,
+            category: media.category,
+            isFavorite: media.isFavorite,
+            isDownloaded: media.isDownloaded,
+            createdAt: media.createdAt,
+          );
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      saveMedia();
+    }
+  }
+
   Future<void> addToWatched(String id) async {
     if (!_watchedIds.contains(id)) {
       _watchedIds.add(id);
@@ -46,6 +83,7 @@ class MediaProvider with ChangeNotifier {
   }
 
   Future<void> refreshMedia() async {
+    await AppConfig.checkConnection(); // Check connection again on refresh
     await Future.wait([
       loadMedia(showLoading: false),
       Future.delayed(const Duration(milliseconds: 800)),
@@ -70,13 +108,17 @@ class MediaProvider with ChangeNotifier {
     if (mediaData != null) {
       final List<dynamic> decoded = jsonDecode(mediaData);
       _mediaList = decoded.map((m) => MediaModel.fromJson(m)).toList();
+
+      // Update URLs based on current connection
+      _updateUrlsWithCurrentConfig();
     } else {
       // Default data
+      final baseUrl = AppConfig.baseUrl;
       _mediaList = [
         MediaModel(
           id: '1',
           title: "Movie.mp4",
-          url: "http://192.168.1.2:9000/movies/Movie.mp4",
+          url: "$baseUrl/movies/Movie.mp4",
           category: 'Trending',
           createdAt: DateTime.now().subtract(const Duration(days: 1)),
         ),
@@ -84,7 +126,7 @@ class MediaProvider with ChangeNotifier {
           id: '2',
           title: "WhatsApp Video 2026-02-11.mp4",
           url:
-              "http://192.168.1.2:9000/movies/WhatsApp%20Video%202026-02-11%20at%2011.49.12%20AM.mp4",
+              "$baseUrl/movies/WhatsApp%20Video%202026-02-11%20at%2011.49.12%20AM.mp4",
           category: 'New Release',
           createdAt: DateTime.now(),
         ),
@@ -105,7 +147,6 @@ class MediaProvider with ChangeNotifier {
       final serverFiles = await minioService.listAllFiles();
       bool changed = false;
 
-      // 1. Remove items that are NOT on the server anymore
       _mediaList.removeWhere((item) {
         if (item.url.contains(AppConfig.minioIp)) {
           final uri = Uri.parse(item.url);
@@ -118,13 +159,11 @@ class MediaProvider with ChangeNotifier {
         return false;
       });
 
-      // 2. Add items that ARE on the server but NOT in our list
       final baseUrl = AppConfig.baseUrl;
       for (final fileName in serverFiles) {
         final encodedName = Uri.encodeComponent(fileName);
         final expectedUrl = '$baseUrl/${AppConfig.bucket}/$encodedName';
 
-        // Check if this URL (or a decoded version of it) is already in our list
         bool alreadyExists = _mediaList.any(
           (m) =>
               m.url == expectedUrl ||
@@ -209,11 +248,15 @@ class MediaProvider with ChangeNotifier {
 
   Future<void> deleteMedia(MediaModel media) async {
     try {
-      // 1. Delete from MinIO if it's a MinIO URL
-      if (media.url.contains(AppConfig.minioIp)) {
+      // 1. Delete from MinIO if it's a server URL (contains bucket name and protocol)
+      if (media.url.contains('/${AppConfig.bucket}/') ||
+          media.url.contains(AppConfig.localIp) ||
+          media.url.contains(AppConfig.globalIp)) {
         final minioService = MinioService();
         final uri = Uri.parse(media.url);
         final fileName = Uri.decodeComponent(p.basename(uri.path));
+
+        print("Attempting to delete from MinIO: $fileName");
         await minioService.deleteMedia(fileName);
       }
 

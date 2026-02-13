@@ -10,6 +10,7 @@ import '../components/video_thumbnail_widget.dart';
 
 import 'package:movies_app/services/auth_service.dart';
 import 'package:movies_app/screen/login_page.dart';
+import 'package:movies_app/config/app_config.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -58,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         floatingActionButton: isAdmin
             ? Padding(
-                padding: const EdgeInsets.only(bottom: 85),
+                padding: const EdgeInsets.only(left: 20),
                 child: FloatingActionButton(
                   onPressed: () => Navigator.push(
                     context,
@@ -747,13 +748,58 @@ class _MediaExplorerState extends State<_MediaExplorer> {
       stretch: true,
       backgroundColor: Colors.black,
       actions: [
-        if (!_isSearching)
+        if (!_isSearching) ...[
+          // Connection Status Badge
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: AppConfig.minioIp == AppConfig.localIp
+                  ? Colors.green.withValues(alpha: 0.1)
+                  : Colors.orange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppConfig.minioIp == AppConfig.localIp
+                    ? Colors.green.withValues(alpha: 0.3)
+                    : Colors.orange.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  AppConfig.minioIp == AppConfig.localIp
+                      ? Icons.bolt_rounded
+                      : Icons.public_rounded,
+                  size: 14,
+                  color: AppConfig.minioIp == AppConfig.localIp
+                      ? Colors.green
+                      : Colors.orange,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  AppConfig.minioIp == AppConfig.localIp
+                      ? 'Local (Fast)'
+                      : 'Global',
+                  style: GoogleFonts.outfit(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: AppConfig.minioIp == AppConfig.localIp
+                        ? Colors.green
+                        : Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.search_rounded),
             onPressed: () => setState(() => _isSearching = true),
           ),
+        ],
         const SizedBox(width: 8),
       ],
+
       leading: widget.isFavoritesOnly
           ? IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded),
@@ -1028,63 +1074,83 @@ class _CompactMediaCard extends StatelessWidget {
   void _showDeleteConfirmation(BuildContext context, MediaProvider provider) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Delete Media?',
-          style: GoogleFonts.outfit(color: Colors.white),
-        ),
-        content: Text(
-          'This will permanently remove the file from the server. Are you sure?',
-          style: GoogleFonts.outfit(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context); // Close confirmation dialog
-
-              // Show loading dialog
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => const PopScope(
-                  canPop: false,
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.redAccent),
-                  ),
-                ),
-              );
-
-              try {
-                await provider.deleteMedia(media);
-                if (context.mounted) Navigator.pop(context); // Close loading
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Media deleted from server')),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) Navigator.pop(context); // Close loading
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error: $e'),
-                      backgroundColor: Colors.redAccent,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.grey[900],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Text(
+                isDeleting ? 'Deleting Media...' : 'Delete Media?',
+                style: GoogleFonts.outfit(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isDeleting)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: CircularProgressIndicator(color: Colors.redAccent),
+                    )
+                  else
+                    Text(
+                      'This will permanently remove the file from the server. Are you sure?',
+                      style: GoogleFonts.outfit(color: Colors.white70),
                     ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            child: const Text('DELETE', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+                ],
+              ),
+              actions: isDeleting
+                  ? []
+                  : [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx),
+                        child: const Text(
+                          'CANCEL',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          setDialogState(() => isDeleting = true);
+                          try {
+                            await provider.deleteMedia(media);
+                            if (dialogCtx.mounted) {
+                              Navigator.pop(dialogCtx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Media deleted from server'),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (dialogCtx.mounted) {
+                              setDialogState(() => isDeleting = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Delete failed: $e'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                        ),
+                        child: const Text(
+                          'DELETE',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -1265,63 +1331,83 @@ class _LargeMediaCard extends StatelessWidget {
   void _showDeleteConfirmation(BuildContext context, MediaProvider provider) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Delete Media?',
-          style: GoogleFonts.outfit(color: Colors.white),
-        ),
-        content: Text(
-          'This will permanently remove the file from the server. Are you sure?',
-          style: GoogleFonts.outfit(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context); // Close confirmation dialog
-
-              // Show loading dialog
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => const PopScope(
-                  canPop: false,
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.redAccent),
-                  ),
-                ),
-              );
-
-              try {
-                await provider.deleteMedia(media);
-                if (context.mounted) Navigator.pop(context); // Close loading
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Media deleted from server')),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) Navigator.pop(context); // Close loading
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error: $e'),
-                      backgroundColor: Colors.redAccent,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.grey[900],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Text(
+                isDeleting ? 'Deleting Media...' : 'Delete Media?',
+                style: GoogleFonts.outfit(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isDeleting)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: CircularProgressIndicator(color: Colors.redAccent),
+                    )
+                  else
+                    Text(
+                      'This will permanently remove the file from the server. Are you sure?',
+                      style: GoogleFonts.outfit(color: Colors.white70),
                     ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            child: const Text('DELETE', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+                ],
+              ),
+              actions: isDeleting
+                  ? []
+                  : [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx),
+                        child: const Text(
+                          'CANCEL',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          setDialogState(() => isDeleting = true);
+                          try {
+                            await provider.deleteMedia(media);
+                            if (dialogCtx.mounted) {
+                              Navigator.pop(dialogCtx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Media deleted from server'),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (dialogCtx.mounted) {
+                              setDialogState(() => isDeleting = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Delete failed: $e'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                        ),
+                        child: const Text(
+                          'DELETE',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+            );
+          },
+        );
+      },
     );
   }
 }
